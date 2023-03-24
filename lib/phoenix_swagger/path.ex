@@ -1,14 +1,14 @@
 defmodule PhoenixSwagger.Path do
   @moduledoc """
   Defines the swagger path DSL for specifying Controller actions.
-
+  
   This module should not be imported directly, it will be automatically imported
   in the scope of a `swagger_path` macro body.
-
+  
   ## Examples
-
+  
       use PhoenixSwagger
-
+  
       swagger_path :index do
         get "/users"
         produces "application/json"
@@ -18,7 +18,7 @@ defmodule PhoenixSwagger.Path do
         response 200 "User resource" :User
         response 404 "User not found"
       end
-
+  
   """
 
   alias PhoenixSwagger.Schema
@@ -27,7 +27,7 @@ defmodule PhoenixSwagger.Path do
     @moduledoc """
     A swagger parameter definition, similar to a `Schema`, but swagger defines
     parameter name (and some other options) to be part of the parameter object itself.
-
+    
     See http://swagger.io/specification/#parameterObject
     """
 
@@ -61,9 +61,9 @@ defmodule PhoenixSwagger.Path do
   defmodule ResponseObject do
     @moduledoc """
     A swagger response definition.
-
+    
     The response status (200, 404, etc.) is the key in the containing map.
-
+    
     See http://swagger.io/specification/#responseObject
     """
     defstruct description: "", schema: nil, headers: nil, examples: nil
@@ -72,7 +72,7 @@ defmodule PhoenixSwagger.Path do
   defmodule OperationObject do
     @moduledoc """
     A swagger operation object ties together parameters, responses, etc.
-
+    
     See http://swagger.io/specification/#operationObject
     """
     defstruct(
@@ -94,10 +94,10 @@ defmodule PhoenixSwagger.Path do
     @moduledoc """
     The DSL builds paths out of individual operations, so this is a flattened version
     of a swagger Path.
-
+    
     The `nest` function will convert this to a nested map before final
     conversion to a JSON map.
-
+    
     See http://swagger.io/specification/#pathsObject
     """
     defstruct path: nil, verb: nil, operation: %OperationObject{}
@@ -175,9 +175,9 @@ defmodule PhoenixSwagger.Path do
 
   @doc """
   Defines multiple parameters for an operation with a custom DSL syntax.
-
+  
   ## Examples
-
+  
       swagger_path :create do
         post "/api/v1/{team}/users"
         summary "Create a new user"
@@ -187,7 +187,7 @@ defmodule PhoenixSwagger.Path do
         end
         response 200, "OK", :User
       end
-
+  
   """
   defmacro parameters(path, block) do
     exprs =
@@ -244,34 +244,43 @@ defmodule PhoenixSwagger.Path do
 
   @doc """
   Adds page size, number and offset parameters to the operation of a swagger `%PathObject{}`.
-
+  
   The names default to  "page_size" and "page" for ease of use with `scriviner_ecto`, but can be overridden.
-
+  
   ## Examples
-
+  
       get "/api/pets/"
       paging
       response 200, "OK"
-
+  
       get "/api/pets/dogs"
       paging size: "page_size", number: "count"
       response 200, "OK"
-
+  
       get "/api/pets/cats"
       paging size: "limit", offset: "offset"
       response 200, "OK"
-
+  
   """
   def paging(path = %PathObject{}, opts \\ [size: "page_size", number: "page"]) do
     Enum.reduce(opts, path, fn
       {:size, size}, path ->
-        parameter(path, size, :query, :integer, "Number of elements per page", minimum: 1)
+        parameter(path, size, :query, :integer, "Number of elements per page")
 
       {:number, number}, path ->
-        parameter(path, number, :query, :integer, "Number of the page", minimum: 1)
+        parameter(path, number, :query, :integer, "Number of the page")
 
       {:offset, offset}, path ->
         parameter(path, offset, :query, :integer, "Offset of first element in the page")
+
+      {:limit, limit}, path ->
+        parameter(path, limit, :query, :integer, "Number of elements per page")
+
+      {:after, after_cursor}, path ->
+        parameter(path, after_cursor, :query, :string, "Return elements after cursor")
+
+      {:before, before_cursor}, path ->
+        parameter(path, before_cursor, :query, :string, "Return elements before cursor")
     end)
   end
 
@@ -285,23 +294,23 @@ defmodule PhoenixSwagger.Path do
 
   @doc """
   Adds a response to the operation of a swagger `%PathObject{}`, with a schema.
-
+  
   Optional keyword args can be provided for `headers` and `examples`.
-
+  
   If the mime-type is known from the `produces` list, then a single can be given as a shorthand.
-
+  
   ## Examples
-
+  
       get "/users/{id}"
       produces "application/json"
       parameter :id, :path, :integer, "user id", required: true
       response 200, "Success", :User, examples: %{"application/json": %{id: 1, name: "Joe"}}
-
+  
       get "/users/{id}"
       produces "application/json"
       parameter :id, :path, :integer, "user id", required: true
       response 200, "Success", :User, example: %{id: 1, name: "Joe"}
-
+  
   """
   def response(path, status, description, schema, opts \\ [])
 
