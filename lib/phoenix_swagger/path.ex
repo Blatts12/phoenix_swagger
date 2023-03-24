@@ -276,10 +276,10 @@ defmodule PhoenixSwagger.Path do
       {:limit, limit}, path ->
         parameter(path, limit, :query, :integer, "Number of elements per page")
 
-      {:after, after_cursor}, path ->
+      {:after_cursor, after_cursor}, path ->
         parameter(path, after_cursor, :query, :string, "Return elements after cursor")
 
-      {:before, before_cursor}, path ->
+      {:before_cursor, before_cursor}, path ->
         parameter(path, before_cursor, :query, :string, "Return elements before cursor")
     end)
   end
