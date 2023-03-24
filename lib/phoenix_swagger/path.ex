@@ -265,22 +265,40 @@ defmodule PhoenixSwagger.Path do
   def paging(path = %PathObject{}, opts \\ []) do
     Enum.reduce(opts, path, fn
       {:size, size}, path ->
-        parameter(path, size, :query, :integer, "Number of elements per page")
+        parameter(path, size, :query, :integer, "Number of elements per page [Page pagination]")
 
       {:number, number}, path ->
-        parameter(path, number, :query, :integer, "Number of the page")
+        parameter(path, number, :query, :integer, "Number of the page [Page pagination]")
 
-      {:offset, offset}, path ->
-        parameter(path, offset, :query, :integer, "Offset of first element in the page")
+      # {:offset, offset}, path ->
+      #   parameter(path, offset, :query, :integer, "Offset of first element in the page")
 
       {:limit, limit}, path ->
-        parameter(path, limit, :query, :integer, "Number of elements per page")
+        parameter(
+          path,
+          limit,
+          :query,
+          :integer,
+          "Number of elements per page [Cursor pagination]"
+        )
 
       {:after_cursor, after_cursor}, path ->
-        parameter(path, after_cursor, :query, :string, "Return elements after cursor")
+        parameter(
+          path,
+          after_cursor,
+          :query,
+          :string,
+          "Return elements after cursor [Cursor pagination]"
+        )
 
       {:before_cursor, before_cursor}, path ->
-        parameter(path, before_cursor, :query, :string, "Return elements before cursor")
+        parameter(
+          path,
+          before_cursor,
+          :query,
+          :string,
+          "Return elements before cursor [Cursor pagination]"
+        )
     end)
   end
 
