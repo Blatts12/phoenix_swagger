@@ -142,6 +142,45 @@ defmodule PhoenixSwagger.JsonApi do
   end
 
   @doc """
+  Defines a schema for a JSON-API resource's body.
+  """
+  defmacro body(do: {:__block__, _, exprs}) do
+    schema =
+      quote do
+        %Schema{
+          type: :object,
+          properties: %{
+            attributes: %Schema{
+              type: :object,
+              properties: %{}
+            },
+            type: %Schema{
+              type: :string,
+              description: "The JSON-API resource type"
+            }
+          }
+        }
+      end
+
+    body =
+      Enum.reduce(exprs, schema, fn expr, acc ->
+        quote do
+          unquote(acc) |> unquote(expr)
+        end
+      end)
+
+    quote do
+      (fn ->
+         import PhoenixSwagger.JsonApi
+         import PhoenixSwagger.Schema
+
+         unquote(body)
+         |> PhoenixSwagger.to_json()
+       end).()
+    end
+  end
+
+  @doc """
   Defines a schema for a JSON-API resource, without the enclosing top-level document.
   """
   defmacro resource(do: {:__block__, _, exprs}) do
