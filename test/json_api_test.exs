@@ -194,10 +194,6 @@ defmodule PhoenixSwagger.JsonApiTest do
                        "links" => %{
                          "type" => "object",
                          "properties" => %{
-                           "related" => %{
-                             "description" => "Related posts link",
-                             "type" => "string"
-                           },
                            "self" => %{
                              "description" => "Relationship link for posts",
                              "type" => "string"

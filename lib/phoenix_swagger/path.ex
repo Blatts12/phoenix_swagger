@@ -262,7 +262,7 @@ defmodule PhoenixSwagger.Path do
       response 200, "OK"
   
   """
-  def paging(path = %PathObject{}, opts \\ [size: "page_size", number: "page"]) do
+  def paging(path = %PathObject{}, opts \\ []) do
     Enum.reduce(opts, path, fn
       {:size, size}, path ->
         parameter(path, size, :query, :integer, "Number of elements per page")

@@ -121,28 +121,9 @@ defmodule PhoenixSwagger.PathTest do
     assert swagger_path_index(route) == %{
              "/api/v1/users" => %{
                "get" => %{
-                 "produces" => ["application/json"],
-                 "tags" => ["Users"],
-                 "operationId" => "list_users",
-                 "summary" => "Query for users",
                  "description" => "Query for users with paging and filtering",
+                 "operationId" => "list_users",
                  "parameters" => [
-                   %{
-                     "description" => "Number of elements per page",
-                     "in" => "query",
-                     "name" => "page_size",
-                     "required" => false,
-                     "type" => "integer",
-                     "minimum" => 1
-                   },
-                   %{
-                     "description" => "Number of the page",
-                     "in" => "query",
-                     "name" => "page",
-                     "required" => false,
-                     "type" => "integer",
-                     "minimum" => 1
-                   },
                    %{
                      "description" => "Address Zip Code",
                      "in" => "query",
@@ -156,32 +137,31 @@ defmodule PhoenixSwagger.PathTest do
                      "description" => "Related resources to include in response",
                      "in" => "query",
                      "items" => %{
-                       "type" => "string",
-                       "enum" => ["organisation", "favourites", "purchases"]
+                       "enum" => ["organisation", "favourites", "purchases"],
+                       "type" => "string"
                      },
                      "name" => "include",
                      "required" => false,
                      "type" => "array"
                    }
                  ],
+                 "produces" => ["application/json"],
                  "responses" => %{
                    "200" => %{
                      "description" => "OK",
-                     "schema" => %{
-                       "$ref" => "#/definitions/Users"
-                     },
                      "examples" => %{
                        "application/json" => %{
                          "email" => "joe@gmail.com",
                          "id" => 1,
                          "name" => "Joe"
                        }
-                     }
+                     },
+                     "schema" => %{"$ref" => "#/definitions/Users"}
                    },
-                   "400" => %{
-                     "description" => "Client Error"
-                   }
-                 }
+                   "400" => %{"description" => "Client Error"}
+                 },
+                 "summary" => "Query for users",
+                 "tags" => ["Users"]
                }
              }
            }
