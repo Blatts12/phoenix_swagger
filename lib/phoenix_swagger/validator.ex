@@ -1,239 +1,265 @@
 defmodule PhoenixSwagger.Validator do
   @moduledoc """
-  The PhoenixSwagger.Validator module provides converter of
-  swagger schema to ex_json_schema structure for further validation.
+  Converts a Swagger schema into an `ex_json_schema` structure for request validation.
 
-  There are two main functions:
+  Call `parse_swagger_schema/1` once at application start. It reads the spec,
+  resolves definitions a single time, and stores fragments, query-parameter
+  descriptors, and a path trie in `:persistent_term`.
 
-    * parse_swagger_schema/1
-    * validate/2
-
-  Before `validate/2` will be called, a swagger schema should be parsed
-  for futher validation with the `parse_swagger_schema/1`. This function
-  takes path to a swagger schema and returns it in ex_json_schema format.
-
-  During execution of the `parse_swagger_schema/1` function, it creates
-  the `validator_table` ets table and stores associative key/value there.
-  Where `key` is an API path of a resource and `value` is input parameters
-  of a resource.
-
-  To validate of a parsed swagger schema, the `validate/1` should be used.
-
-  For more information, see more in ./phoenix_swagger/tests/ directory.
+  Then use `validate/2` with a resource path and parameters, or
+  `PhoenixSwagger.ConnValidator.validate/1` / `PhoenixSwagger.Plug.Validate`
+  on a connection.
   """
 
-  @table :validator_table
+  @http_methods ~w(get put post delete options head patch)
+  @state_key {__MODULE__, :default}
 
   @doc """
-  The `parse_swagger_schema/1` takes path or list of paths to a swagger schema(s),
-  parses it/them into ex_json_schema format and store to the `validator_table` ets
-  table.
+  Parses one or more Swagger schema files, resolves them once, and stores the
+  result in `:persistent_term`.
 
-  ## Examples
+  Multiple files are merged (paths and definitions). Each operation keeps the
+  `basePath` from the file it came from. A later call replaces the previously
+  compiled spec.
 
-      iex(1)> parse_swagger_schema("my_json_spec.json")
-      [{"/person",  %{'__struct__' => 'Elixir.ExJsonSchema.Schema.Root',
-                      location => root,
-                      refs => %{},
-                      schema => %{
-                        "properties" => %{
-                          "name" => %{"type" => "string"},
-                          "age" => %{"type" => "integer"}
-                        }
-                      }
-                    }
-      }]
-
+  Returns a list of `{path, %{schema: fragment}}` tuples, where `path` is the
+  resource path (`"/get/pets"`) and `fragment` is the resolved request schema.
   """
   def parse_swagger_schema(specs) when is_list(specs) do
-    schemas =
-      Enum.map(specs, fn spec ->
-        read_swagger_schema(spec)
-      end)
-
-    schema =
-      Enum.reduce(schemas, %{}, fn schema, acc ->
-        acc =
-          if acc["paths"] == nil do
-            Map.merge(acc, schema)
-          else
-            acc =
-              Map.update!(acc, "paths", fn paths_map -> Map.merge(paths_map, schema["paths"]) end)
-
-            Map.update!(acc, "definitions", fn definitions_map ->
-              Map.merge(definitions_map, schema["definitions"])
-            end)
-          end
-
-        acc
-      end)
-
-    collect_schema_attrs(schema)
+    specs
+    |> Enum.map(&read_swagger_schema/1)
+    |> compile_schemas()
   end
 
-  def parse_swagger_schema(spec) do
-    schema = read_swagger_schema(spec)
-    collect_schema_attrs(schema)
-  end
+  def parse_swagger_schema(spec), do: parse_swagger_schema([spec])
 
   @doc """
-  The `validate/2` takes a resource path and input parameters
-  of this resource.
+  Validates `params` against the compiled schema for `path`.
 
-  Returns `:ok` in a case when parameters are valid for the
-  given resource or:
+  Returns `:ok` when the parameters are valid, or:
 
-    * `{:error, :resource_not_exists}` in a case when path is not
-      exists in the validator table
-
-    * `{:error, error_message, path}` in a case when at least
-      one  parameter is not valid for the given resource
+    * `{:error, :resource_not_exists}` when `path` is not in the compiled spec
+    * `{:error, error_message, path}` when at least one parameter is invalid
   """
   def validate(path, params) do
-    case :ets.lookup(@table, path) do
-      [] ->
+    case lookup(path) do
+      {:ok, root, %{fragment: fragment}} ->
+        validate_params(root, fragment, path, params)
+
+      :error ->
         {:error, :resource_not_exists}
-      [{_, _, schema}] ->
-        case ExJsonSchema.Validator.validate(schema, params) do
-          :ok ->
-            :ok
-
-          {:error, [{error, path}]} ->
-            {:error, error, path}
-
-          {:error, error} ->
-            {:error, error, path}
-        end
     end
   end
 
   @doc false
-  defp collect_schema_attrs(schema) do
-    Enum.map(schema["paths"], fn {path, data} ->
-      Enum.map(Map.keys(data), fn method ->
-        parameters = data[method]["parameters"]
-        # we may have a request without parameters, so nothing to validate
-        # in this case
-        if parameters == nil do
-          []
-        else
-          # Let's go through requests parameters from swagger schema
-          # and collect it into json schema properties.
-          properties =
-            Enum.reduce(parameters, %{}, fn parameter, acc ->
-              acc =
-                if parameter["type"] == nil do
-                  ref = String.split(parameter["schema"]["$ref"], "/") |> List.last()
-                  Map.merge(acc, schema["definitions"][ref])
-                else
-                  acc
-                end
+  def lookup_request(method, path_info) do
+    state = get_state()
+    segments = [method |> to_string() |> String.downcase() | path_info]
 
-              acc
-            end)
+    case walk(state.trie, segments) do
+      nil ->
+        {:error, :no_matching_path}
 
-          # collect request primitive parameters which do not refer to `definitions`
-          # these are mostly parameters from query string
-          properties =
-            Enum.reduce(parameters, properties, fn parameter, acc ->
-              if parameter["type"] != nil do
-                collect_properties(acc, parameter)
-              else
-                acc
-              end
-            end)
-
-          # actually all requests which have parameters are objects
-          properties =
-            if properties["type"] == nil do
-              Map.put_new(properties, "type", "object")
-            else
-              properties
-            end
-
-          # store path concatenated with method. This allows us
-          # to identify the same resources with different http methods.
-          path = "/" <> method <> path
-
-          schema_object =
-            Map.merge(
-              %{
-                "parameters" => parameters,
-                "type" => "object",
-                "definitions" => schema["definitions"]
-              },
-              properties
-            )
-
-          schema_object = schema_object
-            |> Map.update("definitions", %{}, &swagger_nullable_to_json_schema/1)
-
-          resolved_schema = ExJsonSchema.Schema.resolve(schema_object)
-          :ets.insert(@table, {path, schema["basePath"], resolved_schema})
-          {path, resolved_schema}
-        end
-      end)
-    end)
-    |> List.flatten()
+      path ->
+        {:ok, path, Map.fetch!(state.operations, path), state.root}
+    end
   end
 
-  # Swagger 2.0 and JSON-Schema differ in the treatment of nulls.
-  # When the "x-nullable" vendor extension is present in the swagger,
-  # convert the type to an array including "null"
+  @doc false
+  def validate_params(root, fragment, path, params) do
+    case ExJsonSchema.Validator.validate_fragment(root, fragment, params) do
+      :ok ->
+        :ok
+
+      {:error, [{error, error_path}]} ->
+        {:error, error, error_path}
+
+      {:error, errors} ->
+        {:error, errors, path}
+    end
+  end
+
+  @doc false
+  def clear do
+    :persistent_term.erase(@state_key)
+    :ok
+  end
+
+  defp lookup(path) do
+    case get_state() do
+      %{operations: %{^path => operation}, root: root} ->
+        {:ok, root, operation}
+
+      _ ->
+        :error
+    end
+  end
+
+  defp get_state do
+    :persistent_term.get(@state_key, %{root: nil, operations: %{}, trie: %{}})
+  end
+
+  defp compile_schemas(schemas) do
+    definitions =
+      schemas
+      |> Enum.map(&(&1["definitions"] || %{}))
+      |> Enum.reduce(%{}, fn defs, acc -> Map.merge(acc, defs) end)
+      |> swagger_nullable_to_json_schema()
+
+    raw_operations =
+      schemas
+      |> Enum.flat_map(&operations_from_schema(&1, definitions))
+      |> Map.new()
+
+    root =
+      ExJsonSchema.Schema.resolve(%{
+        "definitions" => definitions,
+        "paths" => Map.new(raw_operations, fn {path, %{schema: schema}} -> {path, schema} end)
+      })
+
+    operations =
+      Map.new(raw_operations, fn {path, %{query_params: query_params}} ->
+        {path, %{fragment: root.schema["paths"][path], query_params: query_params}}
+      end)
+
+    trie =
+      Enum.reduce(raw_operations, %{}, fn {path, %{base_path: base_path}}, trie ->
+        put_path(trie, route_segments(base_path, path), path)
+      end)
+
+    :persistent_term.put(@state_key, %{root: root, operations: operations, trie: trie})
+
+    Enum.map(operations, fn {path, %{fragment: fragment}} ->
+      {path, %{schema: fragment}}
+    end)
+  end
+
+  defp operations_from_schema(schema, definitions) do
+    base_path = schema["basePath"]
+
+    for {path, path_item} <- schema["paths"] || %{},
+        {method, operation} <- path_item,
+        method in @http_methods do
+      parameters = operation["parameters"] || []
+      resource_path = "/" <> method <> path
+      schema_object = synthesize_schema(parameters, definitions)
+
+      {resource_path,
+       %{
+         schema: schema_object,
+         query_params: query_descriptors(parameters),
+         base_path: base_path
+       }}
+    end
+  end
+
+  defp synthesize_schema(parameters, definitions) do
+    {schema, properties} =
+      Enum.reduce(parameters, {%{}, %{}}, fn parameter, {schema, properties} ->
+        if is_nil(parameter["type"]) do
+          ref = parameter["schema"]["$ref"] |> String.split("/") |> List.last()
+          {Map.merge(schema, definitions[ref]), properties}
+        else
+          {schema, Map.put(properties, parameter["name"], %{"type" => parameter["type"]})}
+        end
+      end)
+
+    schema = Map.put_new(schema, "type", "object")
+
+    if properties == %{} do
+      schema
+    else
+      Map.update(schema, "properties", properties, &Map.merge(&1, properties))
+    end
+  end
+
+  defp query_descriptors(parameters) do
+    for parameter <- parameters,
+        parameter["type"] != nil,
+        parameter["in"] in ["query", "path"] do
+      {parameter["type"], parameter["name"], parameter["required"], parameter["enum"],
+       parameter["items"]}
+    end
+  end
+
+  # Prefer an exact segment match; fall back to a templated `{param}` branch
+  # and backtrack if the exact branch dead-ends.
+  defp put_path(node, [], path), do: Map.put(node, :leaf, path)
+
+  defp put_path(node, ["{" <> _ | rest], path) do
+    Map.update(node, :_, put_path(%{}, rest, path), &put_path(&1, rest, path))
+  end
+
+  defp put_path(node, [segment | rest], path) do
+    Map.update(node, segment, put_path(%{}, rest, path), &put_path(&1, rest, path))
+  end
+
+  defp walk(node, []), do: Map.get(node, :leaf)
+
+  defp walk(node, [segment | rest]) do
+    case node do
+      %{^segment => subtree} -> walk(subtree, rest) || walk_placeholder(node, rest)
+      _ -> walk_placeholder(node, rest)
+    end
+  end
+
+  defp walk_placeholder(%{_: subtree}, rest), do: walk(subtree, rest)
+  defp walk_placeholder(_node, _rest), do: nil
+
+  defp route_segments(base_path, "/" <> rest) do
+    [method | path_segments] = String.split(rest, "/")
+    [method | base_path_segments(base_path) ++ path_segments]
+  end
+
+  defp base_path_segments(base_path) when base_path in [nil, ""], do: []
+
+  defp base_path_segments(base_path) do
+    base_path |> String.split("/") |> tl()
+  end
+
+  # Swagger 2.0 and JSON Schema differ in the treatment of nulls.
+  # When the "x-nullable" vendor extension is present, convert the type to
+  # an array including "null".
   defp swagger_nullable_to_json_schema(schema = %{"type" => type, "x-nullable" => true})
        when is_binary(type) do
-    schema = %{schema | "type" => [type, "null"]}
-    swagger_nullable_to_json_schema(schema)
+    schema
+    |> Map.put("type", [type, "null"])
+    |> swagger_nullable_to_json_schema()
   end
 
   defp swagger_nullable_to_json_schema(schema = %{"$ref" => ref, "x-nullable" => true})
        when is_binary(ref) do
-    schema = schema
-      |> Map.drop(["$ref", "x-nullable"])
-      |> Map.put("oneOf", [%{"type" => "null"}, %{"$ref" => ref}])
-
-    swagger_nullable_to_json_schema(schema)
+    schema
+    |> Map.drop(["$ref", "x-nullable"])
+    |> Map.put("oneOf", [%{"type" => "null"}, %{"$ref" => ref}])
+    |> swagger_nullable_to_json_schema()
   end
 
   defp swagger_nullable_to_json_schema(schema) when is_map(schema) do
-    for {k, v} <- schema,
-        into: %{},
-        do: {k, swagger_nullable_to_json_schema(v)}
+    Map.new(schema, fn {k, v} -> {k, swagger_nullable_to_json_schema(v)} end)
   end
 
   defp swagger_nullable_to_json_schema(schema) when is_list(schema) do
-    for v <- schema, do: swagger_nullable_to_json_schema(v)
+    Enum.map(schema, &swagger_nullable_to_json_schema/1)
   end
 
   defp swagger_nullable_to_json_schema(other), do: other
 
-  @doc false
-  defp collect_properties(properties, parameter) when properties == %{} do
-    Map.put(
-      %{},
-      "properties",
-      Map.put_new(%{}, parameter["name"], %{"type" => parameter["type"]})
-    )
-  end
-
-  defp collect_properties(properties, parameter) do
-    props = Map.put(properties["properties"], parameter["name"], %{"type" => parameter["type"]})
-    Map.put(properties, "properties", props)
-  end
-
-  @doc false
   defp read_swagger_schema(file) do
-    schema = File.read(file) |> elem(1) |> PhoenixSwagger.json_library().decode() |> elem(1)
-    # get rid from all keys besides 'paths' and 'definitions' as we
-    # need only in these fields for validation
-    Enum.reduce(schema, %{}, fn map, acc ->
-      {key, val} = map
+    schema =
+      file
+      |> File.read!()
+      |> decode_swagger_schema!(file)
 
-      if key in ["basePath", "paths", "definitions"] do
-        Map.put_new(acc, key, val)
-      else
-        acc
-      end
-    end)
+    Map.take(schema, ["basePath", "paths", "definitions"])
+  end
+
+  defp decode_swagger_schema!(contents, file) do
+    PhoenixSwagger.json_library().decode!(contents)
+  rescue
+    e ->
+      reraise ArgumentError,
+              [message: "invalid JSON in swagger schema #{file}: #{Exception.message(e)}"],
+              __STACKTRACE__
   end
 end

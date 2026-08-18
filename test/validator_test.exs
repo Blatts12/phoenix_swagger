@@ -3,8 +3,6 @@ defmodule ValidatorTest do
 
   alias PhoenixSwagger.Validator
 
-  @table :validator_table
-
   setup do
     schema =
       Validator.parse_swagger_schema([
@@ -12,9 +10,7 @@ defmodule ValidatorTest do
         "test/test_spec/swagger_test_spec_2.json"
       ])
 
-    on_exit(fn ->
-      :ets.delete_all_objects(@table)
-    end)
+    on_exit(&Validator.clear/0)
 
     {:ok, schema}
   end
@@ -65,6 +61,24 @@ defmodule ValidatorTest do
 
     assert %{"id" => %{"type" => "integer"}} = pet_id
     assert %{"id" => %{"type" => "integer"}} = pet_delete
+
+    assert %{"type" => "object"} = schemas["/get/me"].schema
+  end
+
+  test "parse_swagger_schema/1 raises when the file is missing" do
+    assert_raise File.Error, ~r/does_not_exist\.json/, fn ->
+      Validator.parse_swagger_schema("does_not_exist.json")
+    end
+  end
+
+  test "parse_swagger_schema/1 raises when the file is not valid JSON" do
+    path = Path.join(System.tmp_dir!(), "phoenix_swagger_invalid_#{System.unique_integer()}.json")
+    File.write!(path, "{not json")
+    on_exit(fn -> File.rm(path) end)
+
+    assert_raise ArgumentError, ~r/invalid JSON in swagger schema/, fn ->
+      Validator.parse_swagger_schema(path)
+    end
   end
 
   test "validate() test" do
@@ -109,13 +123,26 @@ defmodule ValidatorTest do
              Validator.validate("/post/pets", %{"id" => 1, "pet" => %{"name" => "pet_name"}})
 
     assert :ok =
-      Validator.validate("/post/pets", %{"id" => 1, "pet" => %{"name" => "pet_name", "tag" => "pet_tag", "nickname" => nil}})
+             Validator.validate("/post/pets", %{
+               "id" => 1,
+               "pet" => %{"name" => "pet_name", "tag" => "pet_tag", "nickname" => nil}
+             })
 
     assert :ok =
-      Validator.validate("/post/pets", %{"id" => 1, "pet" => %{"name" => "pet_name", "tag" => "pet_tag", "full_name" => nil}})
+             Validator.validate("/post/pets", %{
+               "id" => 1,
+               "pet" => %{"name" => "pet_name", "tag" => "pet_tag", "full_name" => nil}
+             })
 
     assert :ok =
-      Validator.validate("/post/pets", %{"id" => 1, "pet" => %{"name" => "pet_name", "tag" => "pet_tag", "full_name" => %{"first_name" => "Boaty", "last_name" => "McBoatface"}}})
+             Validator.validate("/post/pets", %{
+               "id" => 1,
+               "pet" => %{
+                 "name" => "pet_name",
+                 "tag" => "pet_tag",
+                 "full_name" => %{"first_name" => "Boaty", "last_name" => "McBoatface"}
+               }
+             })
 
     assert :ok =
              Validator.validate("/post/pets", %{

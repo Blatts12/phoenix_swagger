@@ -37,22 +37,8 @@ defmodule PhoenixSwagger do
       end
   """
 
-  @table :validator_table
-
   def start(_type, _args) do
-    import Supervisor.Spec, warn: false
-
-    children = [
-      # Define workers and child supervisors to be supervised
-      # worker(Test.Worker, [arg1, arg2, arg3]),
-    ]
-
-    :ets.new(@table, [:public, :named_table])
-
-    # See http://elixir-lang.org/docs/stable/elixir/Supervisor.html
-    # for other strategies and supported options
-    opts = [strategy: :one_for_one, name: Test.Supervisor]
-    Supervisor.start_link(children, opts)
+    Supervisor.start_link([], strategy: :one_for_one, name: PhoenixSwagger.Supervisor)
   end
 
   defmacro __using__(_) do
@@ -246,10 +232,28 @@ defmodule PhoenixSwagger do
   def ensure_verb_and_path(path, _route), do: path
 
   @doc """
-  Use JSON library from phoenix configuration
+  Returns the configured JSON library.
+
+  Defaults to `Jason`. Configure a different module with:
+
+      config :phoenix_swagger, json_library: Jason
   """
   def json_library do
-    Application.get_env(:phoenix_swagger, :json_library, Poison)
+    Application.get_env(:phoenix_swagger, :json_library) || default_json_library()
+  end
+
+  defp default_json_library do
+    if Code.ensure_loaded?(Jason) do
+      Jason
+    else
+      raise """
+      no :json_library configured for :phoenix_swagger and Jason is not available.
+
+      Add to your config:
+
+          config :phoenix_swagger, json_library: Jason
+      """
+    end
   end
 
   @doc false

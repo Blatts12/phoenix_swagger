@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+  * Resolve the Swagger spec once at boot and store fragments, query descriptors,
+    and a path trie in `:persistent_term` instead of duplicating definitions into
+    every operation and scanning `:validator_table` on each request.
+  * Index operations that omit a `parameters` key so they no longer 404.
+  * Return 400 instead of 500 for bracket query syntax on `array`, `integer`,
+    and `number` parameters.
+  * Raise a file-named error when a Swagger spec is missing or not valid JSON.
+  * Render documented SwaggerUI `config_object` and `config_url` options.
+  * Treat `application/json` in a negotiated `Accept` header as JSON.
+  * Default `json_library` to Jason, with a clear error when none is configured.
+
 ## v0.8.5 - 2025-08-25
 
   * Add priv directory to the package definition

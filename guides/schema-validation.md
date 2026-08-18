@@ -31,12 +31,13 @@ Suppose you have following resource in your schema:
 ```
 
 The `phoenix_swagger` provides `PhoenixSwagger.Validator.parse_swagger_schema/1` API to load a swagger schema by
-the given path or list of paths. This API should be called during application startup to parse/load a swagger schema.
+the given path or list of paths. This API should be called during application startup. It resolves the spec once
+and stores the compiled index in `:persistent_term`.
 
 After this, use one of the following to validate resources:
 * the function `PhoenixSwagger.Validator.validate/2` using request path and parameters
 * the default Plug `PhoenixSwagger.Plug.Validate`
-* the function `PhoenixSwagger.ConnValidate.validate/1` using `conn`
+* the function `PhoenixSwagger.ConnValidator.validate/1` using `conn`
 
 ### `Validator.validate/2`
 

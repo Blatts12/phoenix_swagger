@@ -1,5 +1,6 @@
 {
   "swagger": "2.0",
+  "basePath": "/api",
   "paths": {
     "/pets/cats": {
       "get": {

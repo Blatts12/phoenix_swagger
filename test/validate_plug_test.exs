@@ -1,25 +1,21 @@
 defmodule ValidatePlugTest do
   use ExUnit.Case
   use Plug.Test
-  require IEx
 
   alias PhoenixSwagger.Plug.Validate
   alias PhoenixSwagger.Validator
   alias Plug.Conn
-
-  @table :validator_table
 
   setup do
     schema =
       Validator.parse_swagger_schema([
         "test/test_spec/swagger_test_spec.json",
         "test/test_spec/swagger_test_spec_2.json",
-        "test/test_spec/swagger_test_spec_3.json"
+        "test/test_spec/swagger_test_spec_3.json",
+        "test/test_spec/swagger_test_spec_4.json"
       ])
 
-    on_exit(fn ->
-      :ets.delete_all_objects(@table)
-    end)
+    on_exit(&Validator.clear/0)
 
     {:ok, schema}
   end
@@ -115,6 +111,61 @@ defmodule ValidatePlugTest do
     assert is_nil(test_conn.status)
     assert is_nil(test_conn.resp_body)
     assert test_conn.private[:phoenix_swagger][:valid]
+  end
+
+  test "validation successful on an operation with no parameters key" do
+    test_conn = init_conn(:get, "/typed/ping")
+    test_conn = Validate.call(test_conn, [])
+    assert is_nil(test_conn.status)
+    assert is_nil(test_conn.resp_body)
+    assert test_conn.private[:phoenix_swagger][:valid]
+  end
+
+  test "validation successful on bracket array query syntax" do
+    test_conn = init_conn(:get, "/typed/search", %{}, %{"ids" => ["a", "b"]})
+    test_conn = Validate.call(test_conn, [])
+    assert is_nil(test_conn.status)
+    assert is_nil(test_conn.resp_body)
+    assert test_conn.private[:phoenix_swagger][:valid]
+  end
+
+  test "validation fails with 400 for bracket syntax on integer params" do
+    test_conn = init_conn(:get, "/typed/search", %{}, %{"count" => ["1"]})
+    test_conn = Validate.call(test_conn, [])
+    {400, _, body} = sent_resp(test_conn)
+
+    assert PhoenixSwagger.json_library().decode!(body) == %{
+             "error" => %{
+               "message" => "Type mismatch. Expected Integer but got something else.",
+               "path" => "#/count"
+             }
+           }
+  end
+
+  test "validation fails with 400 for bracket syntax on number params" do
+    test_conn = init_conn(:get, "/typed/search", %{}, %{"score" => ["1.5"]})
+    test_conn = Validate.call(test_conn, [])
+    {400, _, body} = sent_resp(test_conn)
+
+    assert PhoenixSwagger.json_library().decode!(body) == %{
+             "error" => %{
+               "message" => "Type mismatch. Expected Number but got something else.",
+               "path" => "#/score"
+             }
+           }
+  end
+
+  test "validation fails with 400 for a non-numeric integer query param" do
+    test_conn = init_conn(:get, "/typed/search", %{}, %{"count" => "x"})
+    test_conn = Validate.call(test_conn, [])
+    {400, _, body} = sent_resp(test_conn)
+
+    assert PhoenixSwagger.json_library().decode!(body) == %{
+             "error" => %{
+               "message" => "Type mismatch. Expected Integer but got something else.",
+               "path" => "#/count"
+             }
+           }
   end
 
   defp init_conn(verb, path, body_params \\ %{}, path_params \\ %{}) do

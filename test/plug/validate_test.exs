@@ -11,14 +11,10 @@ defmodule PhoenixSwagger.Plug.ValidateTest do
                   parsers: [:urlencoded, :json],
                   pass: ["*/*"]
                 )
-  @table :validator_table
-
   setup do
     Validator.parse_swagger_schema(["test/test_spec/swagger_jsonapi_test_spec.json"])
 
-    on_exit(fn ->
-      :ets.delete_all_objects(@table)
-    end)
+    on_exit(&Validator.clear/0)
 
     :ok
   end

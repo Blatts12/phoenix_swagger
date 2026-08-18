@@ -57,7 +57,7 @@ defmodule PhoenixSwagger.Plug.SwaggerUI do
             plugins: [
               SwaggerUIBundle.plugins.DownloadUrl
             ],
-            layout: "StandaloneLayout"
+            layout: "StandaloneLayout"<%= extra_config %>
           });
         };
       </script>
@@ -124,8 +124,7 @@ defmodule PhoenixSwagger.Plug.SwaggerUI do
 
     body =
       EEx.eval_string(@template,
-        config_object: config_object,
-        config_url: config_url,
+        extra_config: extra_swagger_ui_config(config_object, config_url),
         spec_url: swagger_file
       )
 
@@ -146,17 +145,39 @@ defmodule PhoenixSwagger.Plug.SwaggerUI do
   end
 
   defp accept_json?(conn) do
-    case get_req_header(conn, "accept") do
-      ["application/json"] -> true
-      _ -> false
-    end
+    conn
+    |> get_req_header("accept")
+    |> Enum.any?(fn header ->
+      header
+      |> String.split(",", trim: true)
+      |> Enum.any?(&(&1 |> String.trim() |> String.starts_with?("application/json")))
+    end)
   end
 
   defp format_config_url(opts) do
     case Keyword.fetch(opts, :config_url) do
       :error -> :undefined
       {:ok, nil} -> :undefined
-      {:ok, url} -> "\"#{url}\""
+      {:ok, url} -> url
+    end
+  end
+
+  defp extra_swagger_ui_config(config_object, config_url) do
+    entries =
+      Enum.map(config_object, fn {key, value} ->
+        "#{key}: #{PhoenixSwagger.json_library().encode!(value)}"
+      end)
+
+    entries =
+      if config_url == :undefined do
+        entries
+      else
+        ["configUrl: #{PhoenixSwagger.json_library().encode!(config_url)}" | entries]
+      end
+
+    case entries do
+      [] -> ""
+      _ -> ",\n            " <> Enum.join(entries, ",\n            ")
     end
   end
 end
