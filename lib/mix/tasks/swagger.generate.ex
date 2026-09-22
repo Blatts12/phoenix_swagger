@@ -100,7 +100,7 @@ defmodule Mix.Tasks.Phx.Swagger.Generate do
 
   defp sort_paths_and_definitions(swagger) do
     swagger
-    |> Map.update!(:paths, &PhoenixSwagger.OrderedObject.new/1)
+    |> Map.update!(:paths, &PhoenixSwagger.OrderedObject.by_tag/1)
     |> Map.update!(:definitions, &PhoenixSwagger.OrderedObject.new/1)
   end
 

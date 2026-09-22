@@ -29,4 +29,29 @@ defmodule PhoenixSwagger.OrderedObjectTest do
     assert Jason.encode!(OrderedObject.new(%{})) == "{}"
     assert Poison.encode!(OrderedObject.new(%{})) == "{}"
   end
+
+  test "sorts paths by tag, then by path" do
+    paths = %{
+      "/z" => %{"get" => %{"tags" => ["B"]}},
+      "/a" => %{"get" => %{"tags" => ["B"]}},
+      "/m" => %{"post" => %{"tags" => ["A"]}},
+      "/untagged" => %{"get" => %{}}
+    }
+
+    assert Jason.encode!(OrderedObject.by_tag(paths)) ==
+             ~s({"/untagged":{"get":{}},"/m":{"post":{"tags":["A"]}},"/a":{"get":{"tags":["B"]}},"/z":{"get":{"tags":["B"]}}})
+  end
+
+  test "uses the get operation's tag when methods disagree" do
+    paths = %{
+      "/item" => %{"get" => %{"tags" => ["M"]}, "post" => %{"tags" => ["Z"]}},
+      "/middle" => %{"get" => %{"tags" => ["P"]}}
+    }
+
+    json = Jason.encode!(OrderedObject.by_tag(paths))
+    assert json =~ ~s("/item":)
+    {item, _} = :binary.match(json, "\"/item\"")
+    {middle, _} = :binary.match(json, "\"/middle\"")
+    assert item < middle
+  end
 end

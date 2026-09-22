@@ -6,8 +6,14 @@ defmodule Mix.Tasks.Phx.Swagger.GenerateTest do
       padded = String.pad_leading(Integer.to_string(i), 2, "0")
       path = "/p" <> padded
 
+      tag = if rem(i, 2) == 0, do: "A", else: "B"
+
       def unquote(:"swagger_path_item_#{padded}")(_route) do
-        %{unquote(path) => %{"get" => %{"operationId" => unquote(padded)}}}
+        %{
+          unquote(path) => %{
+            "get" => %{"operationId" => unquote(padded), "tags" => [unquote(tag)]}
+          }
+        }
       end
     end
 
@@ -61,15 +67,23 @@ defmodule Mix.Tasks.Phx.Swagger.GenerateTest do
     %{output: output}
   end
 
-  test "writes paths and definitions in alphabetical order", %{output: output} do
+  test "writes paths grouped by tag and definitions in alphabetical order", %{output: output} do
     Mix.Task.run("phx.swagger.generate")
 
     json = File.read!(output)
     paths = Regex.scan(~r{"/p\d+"}, json) |> Enum.map(&hd/1)
 
-    assert paths == Enum.sort(paths)
+    assert paths == tagged_paths("A") ++ tagged_paths("B")
     assert_before(json, "\"Apple\"", "\"Mango\"")
     assert_before(json, "\"Mango\"", "\"Zebra\"")
+  end
+
+  defp tagged_paths(tag) do
+    remainder = if tag == "A", do: 0, else: 1
+
+    for i <- 1..33, rem(i, 2) == remainder do
+      ~s("/p#{String.pad_leading(Integer.to_string(i), 2, "0")}")
+    end
   end
 
   defp assert_before(json, earlier, later) do
