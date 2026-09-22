@@ -94,7 +94,14 @@ defmodule Mix.Tasks.Phx.Swagger.Generate do
     |> collect_host(endpoint)
     |> collect_paths(router)
     |> collect_definitions(router)
+    |> sort_paths_and_definitions()
     |> PhoenixSwagger.json_library().encode!(pretty: true)
+  end
+
+  defp sort_paths_and_definitions(swagger) do
+    swagger
+    |> Map.update!(:paths, &PhoenixSwagger.OrderedObject.new/1)
+    |> Map.update!(:definitions, &PhoenixSwagger.OrderedObject.new/1)
   end
 
   defp collect_info(router) do

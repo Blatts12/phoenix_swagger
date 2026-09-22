@@ -12,6 +12,7 @@
   * Render documented SwaggerUI `config_object` and `config_url` options.
   * Treat `application/json` in a negotiated `Accept` header as JSON.
   * Default `json_library` to Jason, with a clear error when none is configured.
+  * Write `paths` and `definitions` in alphabetical order in generated Swagger files.
 
 ## v0.8.5 - 2025-08-25
 
