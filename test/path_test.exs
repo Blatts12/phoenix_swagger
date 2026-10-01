@@ -315,4 +315,14 @@ defmodule PhoenixSwagger.PathTest do
              }
            }
   end
+
+  test "default tag strips only the trailing Controller suffix" do
+    path = %PhoenixSwagger.Path.PathObject{}
+
+    assert ["ControllerAdmin"] =
+             PhoenixSwagger.ensure_tag(path, MyApp.ControllerAdminController).operation.tags
+
+    assert ["User"] = PhoenixSwagger.ensure_tag(path, MyApp.UserController).operation.tags
+    assert [] = PhoenixSwagger.ensure_tag(path, MyApp.Controller).operation.tags
+  end
 end

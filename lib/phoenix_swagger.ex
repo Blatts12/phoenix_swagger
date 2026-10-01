@@ -1,5 +1,4 @@
 defmodule PhoenixSwagger do
-  use Application
   alias PhoenixSwagger.Path
   alias PhoenixSwagger.Path.PathObject
 
@@ -36,10 +35,6 @@ defmodule PhoenixSwagger do
         }
       end
   """
-
-  def start(_type, _args) do
-    Supervisor.start_link([], strategy: :one_for_one, name: PhoenixSwagger.Supervisor)
-  end
 
   defmacro __using__(_) do
     quote do
@@ -211,12 +206,10 @@ defmodule PhoenixSwagger do
   # Add a default tag based on controller module name if none present
   def ensure_tag(path = %PathObject{operation: %{tags: []}}, module) do
     tags =
-      module
-      |> Module.split()
-      |> Enum.reverse()
-      |> hd()
-      |> String.split("Controller")
-      |> Enum.filter(&(String.length(&1) > 0))
+      case module |> Module.split() |> List.last() |> String.replace_suffix("Controller", "") do
+        "" -> []
+        tag -> [tag]
+      end
 
     put_in(path.operation.tags, tags)
   end

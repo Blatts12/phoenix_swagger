@@ -41,6 +41,9 @@ defmodule Mix.Tasks.Phx.Swagger.GenerateTest do
     end
   end
 
+  defmodule UnconfiguredEndpoint do
+  end
+
   setup do
     output =
       Path.join(
@@ -76,6 +79,16 @@ defmodule Mix.Tasks.Phx.Swagger.GenerateTest do
     assert paths == tagged_paths("A") ++ tagged_paths("B")
     assert_before(json, "\"Apple\"", "\"Mango\"")
     assert_before(json, "\"Mango\"", "\"Zebra\"")
+  end
+
+  test "writes the file when the endpoint has no application config", %{output: output} do
+    Application.put_env(:phoenix_swagger, :phoenix_swagger,
+      swagger_files: %{output => [router: Router, endpoint: UnconfiguredEndpoint]}
+    )
+
+    Mix.Task.run("phx.swagger.generate")
+
+    refute output |> File.read!() |> Jason.decode!() |> Map.has_key?("host")
   end
 
   defp tagged_paths(tag) do

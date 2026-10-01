@@ -81,6 +81,17 @@ On validation errors, the default Plug returns `400` with the following body:
 The return code for validation errors is configurable via `:validation_failed_status` parameter.
 If `conn.private[:phoenix_swagger][:valid]` is set to `true`, the Plug will skip validation.
 
+### Which parameters get checked?
+
+The plug reads each parameter from the place Swagger says it lives. Query, path, header, and form values arrive as strings, so the validator parses them into the declared type first. Then it checks the rest of the declaration against the parsed value.
+
+* `body` parameters are checked against their schema, either inline or a `$ref` to `definitions`.
+* `query`, `path`, `header`, and `formData` parameters are checked for `required`, `type`, and `enum`.
+* Keywords such as `minimum`, `maximum`, `pattern`, `maxLength`, and `format` are checked after parsing.
+* Header names match case-insensitively, because Plug lowercases them.
+
+A word of caution about `Validator.validate/2`. It takes one map of already typed values, so it can't tell a form string from a JSON number. That's why it skips header parameters and only type-checks `string` and `file` form fields. Use `ConnValidator.validate/1` when you have a `conn`.
+
 ### `ConnValidator.validate/1`
 
 Use `ConnValidator.validate/1` to build your own Plugs. It accepts a `conn` and returns `:ok` on validation success. Refer to source for error cases.

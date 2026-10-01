@@ -21,8 +21,8 @@ defmodule PhoenixSwagger.Plug.SwaggerUI do
   use Plug.Router
   alias Plug.Conn
 
-  # Serve static assets before routing
-  plug(Plug.Static, at: "/", from: :phoenix_swagger)
+  # Serve static assets before routing. The bundles ship with `.gz` copies.
+  plug(Plug.Static, at: "/", from: :phoenix_swagger, gzip: true)
 
   plug(:match)
   plug(:dispatch)

@@ -15,6 +15,28 @@
   * Write `definitions` in alphabetical order, and `paths` grouped by tag, in generated Swagger files.
   * Accept Swagger 2 `formData` `file` parameters during validation by treating
     them as unconstrained objects in the compiled schema.
+  * Match requests when `basePath` is `/` or a path has a trailing slash.
+  * Accept body parameters with an inline schema instead of crashing at boot,
+    and raise a clear error for a `$ref` to an unknown definition.
+  * Parse `formData` and `header` parameters from strings, and enforce their
+    `required` flag.
+  * Check `minimum`, `maximum`, `pattern`, `maxLength`, `format`, and other
+    Swagger keywords on query, path, header, and form parameters. Compare
+    `enum` against the parsed value, so integer enums work.
+  * Decode bracketed parameter names such as `page[size]` once at boot instead
+    of on every request.
+  * Cache the resolved spec in `PhoenixSwagger.SchemaTest` until the file changes,
+    instead of resolving it again for every test module.
+  * `mix phx.swagger.generate` no longer crashes when the endpoint has no
+    application config, and loads each controller once.
+  * `compile.phoenix_swagger` skips generation when the swagger files are newer
+    than the build, and returns `{status, diagnostics}` as Mix expects.
+  * Default tags strip only the trailing `Controller` from the module name.
+  * Ship only the Swagger UI files the plug serves, with gzip copies. The
+    package shrinks from about 11 MB to 2.3 MB.
+  * Breaking: drop Poison support. Use Jason.
+  * Breaking: remove the empty `PhoenixSwagger` application callback.
+  * Add `bench/conn_validator.exs`, run with `mix run bench/conn_validator.exs`.
 
 ## v0.8.5 - 2025-08-25
 

@@ -39,6 +39,19 @@ defmodule PhoenixSwagger.Plug.SwaggerUITest do
     assert Jason.decode!(body) == %{"Error" => "not found"}
   end
 
+  test "serves the precompressed bundle to clients that accept gzip" do
+    opts = SwaggerUI.init(otp_app: :phoenix_swagger, swagger_file: "swagger.json")
+
+    conn =
+      :get
+      |> conn("/swagger-ui-bundle.js")
+      |> put_req_header("accept-encoding", "gzip")
+      |> SwaggerUI.call(opts)
+
+    assert {200, headers, _body} = sent_resp(conn)
+    assert get_header(headers, "content-encoding") == "gzip"
+  end
+
   defp get_header(headers, name) do
     {^name, value} = List.keyfind(headers, name, 0)
     value
