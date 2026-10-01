@@ -1,7 +1,7 @@
 defmodule PhoenixSwagger.Mixfile do
   use Mix.Project
 
-  @source_url "https://github.com/xerions/phoenix_swagger"
+  @source_url "https://github.com/Blatts12/phoenix_swagger"
   @version "0.8.5"
 
   def project do
@@ -14,48 +14,52 @@ defmodule PhoenixSwagger.Mixfile do
       deps: deps(),
       package: package(),
       docs: docs(),
-      xref: [exclude: [
-        ExJsonSchema.Schema,
-        ExJsonSchema.Validator
-      ]]
+      dialyzer: [plt_add_apps: [:mix, :ex_unit]],
+      xref: [
+        exclude: [
+          ExJsonSchema.Schema,
+          ExJsonSchema.Validator
+        ]
+      ]
     ]
   end
 
   def application do
     [
-      extra_applications: extra_applications(Mix.env()) ++ [:logger],
-      mod: {PhoenixSwagger, []}
+      extra_applications: extra_applications(Mix.env()) ++ [:logger, :eex]
     ]
   end
 
   defp extra_applications(:test) do
     [:jason, :ex_json_schema]
   end
+
   defp extra_applications(_), do: []
 
   defp deps do
     [
-      {:poison, "~> 6.0", optional: true},
       {:jason, "~> 1.4", optional: true},
       {:ex_json_schema, "~> 0.9", optional: true},
       {:plug, "~> 1.14"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
+      {:benchee, "~> 1.3", only: :dev},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false}
     ]
   end
 
   defp package do
     [
-      description: "PhoenixSwagger is the library that provides swagger "
-        <> "integration to the phoenix web framework.",
-      maintainers: ["Alexander Kuleshov"],
+      description:
+        "PhoenixSwagger is the library that provides swagger " <>
+          "integration to the phoenix web framework.",
+      maintainers: ["Alexander Kuleshov", "Jakub Melkowski"],
       licenses: ["MPL-2.0"],
       links: %{
         "Changelog" => "https://hexdocs.pm/phoenix_swagger/changelog.html",
         "GitHub" => @source_url,
         "Slack" => "https://elixir-lang.slack.com/messages/phoenix_swagger"
       },
-      files: ~w(lib mix.exs .formatter.exs README.md CHANGELOG.md LICENSE config priv)
+      files: ~w(lib mix.exs .formatter.exs README.md CHANGELOG.md LICENSE priv)
     ]
   end
 
@@ -63,7 +67,7 @@ defmodule PhoenixSwagger.Mixfile do
     [
       extras: [
         "CHANGELOG.md",
-        {:"LICENSE", [title: "License"]},
+        {:LICENSE, [title: "License"]},
         {:"README.md", [title: "Overview"]},
         "guides/getting-started.md",
         "guides/schemas.md",

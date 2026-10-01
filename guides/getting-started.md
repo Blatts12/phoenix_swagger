@@ -34,6 +34,8 @@ def project do
 end
 ```
 
+The compiler skips generation when every swagger file is newer than your compiled modules and config files. Run `mix phx.swagger.generate` to regenerate them on demand. The check costs one file stat per compiled module, which is far cheaper than rebuilding the spec on every compile.
+
 ## Configuration
 
 Add a config entry to your phoenix application specifying the output filename, router and endpoint modules used to generate the swagger file:

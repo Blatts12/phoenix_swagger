@@ -14,6 +14,12 @@ defmodule PhoenixSwagger.Validator do
   @http_methods ~w(get put post delete options head patch)
   @state_key {__MODULE__, :default}
 
+  # Swagger 2 parameter keywords that JSON Schema can check once a raw
+  # query, path, header, or form value is parsed into its declared type.
+  @constraint_keys ~w(format maximum exclusiveMaximum minimum exclusiveMinimum maxLength
+                      minLength pattern maxItems minItems uniqueItems enum multipleOf items)
+  @draft4 "http://json-schema.org/draft-04/schema#"
+
   @doc """
   Parses one or more Swagger schema files, resolves them once, and stores the
   result in `:persistent_term`.
@@ -118,8 +124,8 @@ defmodule PhoenixSwagger.Validator do
       })
 
     operations =
-      Map.new(raw_operations, fn {path, %{query_params: query_params}} ->
-        {path, %{fragment: root.schema["paths"][path], query_params: query_params}}
+      Map.new(raw_operations, fn {path, %{parameters: parameters}} ->
+        {path, %{fragment: root.schema["paths"][path], parameters: parameters}}
       end)
 
     trie =
@@ -147,7 +153,7 @@ defmodule PhoenixSwagger.Validator do
       {resource_path,
        %{
          schema: schema_object,
-         query_params: query_descriptors(parameters),
+         parameters: parameter_descriptors(parameters),
          base_path: base_path
        }}
     end
@@ -156,11 +162,15 @@ defmodule PhoenixSwagger.Validator do
   defp synthesize_schema(parameters, definitions) do
     {schema, properties} =
       Enum.reduce(parameters, {%{}, %{}}, fn parameter, {schema, properties} ->
-        if is_nil(parameter["type"]) do
-          ref = parameter["schema"]["$ref"] |> String.split("/") |> List.last()
-          {Map.merge(schema, definitions[ref]), properties}
-        else
-          {schema, Map.put(properties, parameter["name"], parameter_schema(parameter))}
+        cond do
+          is_nil(parameter["type"]) ->
+            {Map.merge(schema, body_schema(parameter["schema"], definitions)), properties}
+
+          checked_by_json_schema?(parameter) ->
+            {schema, Map.put(properties, parameter["name"], parameter_schema(parameter))}
+
+          true ->
+            {schema, properties}
         end
       end)
 
@@ -173,6 +183,27 @@ defmodule PhoenixSwagger.Validator do
     end
   end
 
+  defp body_schema(%{"$ref" => "#/definitions/" <> name}, definitions) do
+    case definitions do
+      %{^name => definition} -> definition
+      _ -> raise ArgumentError, "body parameter references unknown definition #{inspect(name)}"
+    end
+  end
+
+  defp body_schema(inline_schema, _definitions) when is_map(inline_schema) do
+    swagger_nullable_to_json_schema(inline_schema)
+  end
+
+  # Headers never reach the params map, and form fields arrive as strings, so
+  # only string and file form fields can be checked as JSON types. The rest are
+  # parsed and checked by `PhoenixSwagger.ConnValidator`.
+  defp checked_by_json_schema?(%{"in" => "header"}), do: false
+
+  defp checked_by_json_schema?(%{"in" => "formData", "type" => type}),
+    do: type in ["file", "string"]
+
+  defp checked_by_json_schema?(_parameter), do: true
+
   # Swagger 2's `file` type is valid on formData parameters, but JSON Schema
   # has no such type. Leave the public specification unchanged and accept an
   # unconstrained object here so multipart uploads reach domain validation.
@@ -180,18 +211,67 @@ defmodule PhoenixSwagger.Validator do
     %{"type" => "object"}
   end
 
-  defp parameter_schema(%{"type" => type}) do
-    %{"type" => type}
+  defp parameter_schema(parameter) do
+    Map.take(parameter, ["type" | @constraint_keys])
   end
 
-  defp query_descriptors(parameters) do
+  defp parameter_descriptors(parameters) do
     for parameter <- parameters,
         parameter["type"] != nil,
-        parameter["in"] in ["query", "path"] do
-      {parameter["type"], parameter["name"], parameter["required"], parameter["enum"],
-       parameter["items"]}
+        parameter["in"] in ["query", "path", "header", "formData"] do
+      %{
+        name: parameter["name"],
+        in: parameter["in"],
+        type: parameter["type"],
+        items: parameter["items"],
+        enum: parameter["enum"],
+        required: parameter["required"] == true,
+        key_path: parameter_key_path(parameter),
+        constraints: resolve_constraints(parameter)
+      }
     end
   end
+
+  # Plug lowercases header names. Other names may use bracket syntax, such
+  # as `page[size]`, so decode them once here instead of on every request.
+  defp parameter_key_path(%{"in" => "header", "name" => name}), do: [String.downcase(name)]
+
+  defp parameter_key_path(%{"name" => name}) do
+    name |> Plug.Conn.Query.decode() |> collect_query_keys()
+  end
+
+  defp collect_query_keys(decoded) when is_map(decoded) and map_size(decoded) == 1 do
+    [{key, nested}] = Map.to_list(decoded)
+    [key | collect_query_keys(nested)]
+  end
+
+  defp collect_query_keys(_decoded), do: []
+
+  # `nil` lets the request path skip JSON Schema entirely for the common
+  # case of a parameter declared with a type and nothing else. `enum` is left
+  # out because `PhoenixSwagger.ConnValidator` checks it with a clearer message,
+  # as it does the `type` and `enum` of array items.
+  defp resolve_constraints(parameter) do
+    constraints =
+      parameter
+      |> Map.take(@constraint_keys -- ["enum"])
+      |> drop_item_checks_done_by_parsing()
+
+    if map_size(constraints) == 0 do
+      nil
+    else
+      constraints |> Map.put("$schema", @draft4) |> ExJsonSchema.Schema.resolve()
+    end
+  end
+
+  defp drop_item_checks_done_by_parsing(%{"items" => items} = constraints) do
+    case Map.drop(items, ["type", "enum"]) do
+      remaining when map_size(remaining) == 0 -> Map.delete(constraints, "items")
+      remaining -> Map.put(constraints, "items", remaining)
+    end
+  end
+
+  defp drop_item_checks_done_by_parsing(constraints), do: constraints
 
   # Prefer an exact segment match; fall back to a templated `{param}` branch
   # and backtrack if the exact branch dead-ends.
@@ -217,44 +297,41 @@ defmodule PhoenixSwagger.Validator do
   defp walk_placeholder(%{_: subtree}, rest), do: walk(subtree, rest)
   defp walk_placeholder(_node, _rest), do: nil
 
+  # `trim: true` drops the empty segments a `/` basePath or a trailing slash
+  # would add, since `conn.path_info` never contains them.
   defp route_segments(base_path, "/" <> rest) do
-    [method | path_segments] = String.split(rest, "/")
-    [method | base_path_segments(base_path) ++ path_segments]
+    [method | path_segments] = String.split(rest, "/", trim: true)
+    [method | String.split(base_path || "", "/", trim: true) ++ path_segments]
   end
 
-  defp base_path_segments(base_path) when base_path in [nil, ""], do: []
-
-  defp base_path_segments(base_path) do
-    base_path |> String.split("/") |> tl()
-  end
-
+  @doc false
   # Swagger 2.0 and JSON Schema differ in the treatment of nulls.
   # When the "x-nullable" vendor extension is present, convert the type to
   # an array including "null".
-  defp swagger_nullable_to_json_schema(schema = %{"type" => type, "x-nullable" => true})
-       when is_binary(type) do
+  def swagger_nullable_to_json_schema(schema = %{"type" => type, "x-nullable" => true})
+      when is_binary(type) do
     schema
     |> Map.put("type", [type, "null"])
     |> swagger_nullable_to_json_schema()
   end
 
-  defp swagger_nullable_to_json_schema(schema = %{"$ref" => ref, "x-nullable" => true})
-       when is_binary(ref) do
+  def swagger_nullable_to_json_schema(schema = %{"$ref" => ref, "x-nullable" => true})
+      when is_binary(ref) do
     schema
     |> Map.drop(["$ref", "x-nullable"])
     |> Map.put("oneOf", [%{"type" => "null"}, %{"$ref" => ref}])
     |> swagger_nullable_to_json_schema()
   end
 
-  defp swagger_nullable_to_json_schema(schema) when is_map(schema) do
+  def swagger_nullable_to_json_schema(schema) when is_map(schema) do
     Map.new(schema, fn {k, v} -> {k, swagger_nullable_to_json_schema(v)} end)
   end
 
-  defp swagger_nullable_to_json_schema(schema) when is_list(schema) do
+  def swagger_nullable_to_json_schema(schema) when is_list(schema) do
     Enum.map(schema, &swagger_nullable_to_json_schema/1)
   end
 
-  defp swagger_nullable_to_json_schema(other), do: other
+  def swagger_nullable_to_json_schema(other), do: other
 
   defp read_swagger_schema(file) do
     schema =

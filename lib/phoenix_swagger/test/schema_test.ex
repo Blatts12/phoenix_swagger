@@ -48,46 +48,30 @@ defmodule PhoenixSwagger.SchemaTest do
   end
 
   @doc false
+  # Every test module that uses this helper calls this in `setup_all`, so
+  # cache the resolved schema until the file's mtime or size changes.
   def read_swagger_schema(swagger_file) do
-    schema =
-      swagger_file
-      |> File.read!()
-      |> PhoenixSwagger.json_library().decode!()
-      |> Map.update("definitions", %{}, &swagger_nullable_to_json_schema/1)
-      |> ExJsonSchema.Schema.resolve()
+    %{mtime: mtime, size: size} = File.stat!(swagger_file, time: :posix)
+    key = {__MODULE__, Path.expand(swagger_file)}
 
-    [swagger_schema: schema]
+    case :persistent_term.get(key, nil) do
+      {{^mtime, ^size}, schema} ->
+        [swagger_schema: schema]
+
+      _ ->
+        schema = resolve_swagger_schema(swagger_file)
+        :persistent_term.put(key, {{mtime, size}, schema})
+        [swagger_schema: schema]
+    end
   end
 
-  # Swagger 2.0 and JSON-Schema differ in the treatment of nulls.
-  # When the "x-nullable" vendor extension is present in the swagger,
-  # convert the type to an array including "null"
-  defp swagger_nullable_to_json_schema(schema = %{"type" => type, "x-nullable" => true})
-       when is_binary(type) do
-    schema = %{schema | "type" => [type, "null"]}
-    swagger_nullable_to_json_schema(schema)
+  defp resolve_swagger_schema(swagger_file) do
+    swagger_file
+    |> File.read!()
+    |> PhoenixSwagger.json_library().decode!()
+    |> Map.update("definitions", %{}, &PhoenixSwagger.Validator.swagger_nullable_to_json_schema/1)
+    |> ExJsonSchema.Schema.resolve()
   end
-
-  defp swagger_nullable_to_json_schema(schema = %{"$ref" => ref, "x-nullable" => true})
-       when is_binary(ref) do
-    schema = schema
-      |> Map.drop(["$ref", "x-nullable"])
-      |> Map.put("oneOf", [%{"type" => "null"}, %{"$ref" => ref}])
-
-    swagger_nullable_to_json_schema(schema)
-  end
-
-  defp swagger_nullable_to_json_schema(schema) when is_map(schema) do
-    for {k, v} <- schema,
-        into: %{},
-        do: {k, swagger_nullable_to_json_schema(v)}
-  end
-
-  defp swagger_nullable_to_json_schema(schema) when is_list(schema) do
-    for v <- schema, do: swagger_nullable_to_json_schema(v)
-  end
-
-  defp swagger_nullable_to_json_schema(other), do: other
 
   @doc """
   Validates a response body against a swagger schema.

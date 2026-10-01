@@ -263,14 +263,12 @@ defmodule PhoenixSwagger.Schema do
   end
 
   defp get_dash_name({:-, _line, [first, second]}),
-       do: get_dash_name(first) <> "-" <> get_dash_name(second)
+    do: get_dash_name(first) <> "-" <> get_dash_name(second)
 
   defp get_dash_name({atom_name, _, _}), do: to_string(atom_name)
 
   defp get_args({:-, _line, [_first, second]}), do: get_args(second)
   defp get_args({_, _line, args}), do: args
-
-
 
   @doc """
   Sets the format of a Schema with `type: :string`.

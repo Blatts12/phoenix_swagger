@@ -32,10 +32,7 @@ defmodule Mix.Tasks.Phx.Swagger.Generate do
     Mix.Task.reenable("phx.swagger.generate")
     Code.append_path(Mix.Project.compile_path())
 
-    swagger_files =
-      app_name()
-      |> Application.get_env(:phoenix_swagger, [])
-      |> Keyword.get(:swagger_files, %{})
+    swagger_files = swagger_files()
 
     if Enum.empty?(swagger_files) && !Mix.Task.recursing?() do
       Logger.warning("""
@@ -62,6 +59,13 @@ defmodule Mix.Tasks.Phx.Swagger.Generate do
     end)
   end
 
+  @doc false
+  def swagger_files do
+    app_name()
+    |> Application.get_env(:phoenix_swagger, [])
+    |> Keyword.get(:swagger_files, %{})
+  end
+
   defp write_file(output_file, contents) do
     directory = Path.dirname(output_file)
 
@@ -70,8 +74,9 @@ defmodule Mix.Tasks.Phx.Swagger.Generate do
     end
 
     case File.read(output_file) do
+      # Touch the file so `compile.phoenix_swagger` sees it as fresh.
       {:ok, ^contents} ->
-        :ok
+        File.touch!(output_file)
 
       _ ->
         File.write!(output_file, contents)
@@ -89,11 +94,14 @@ defmodule Mix.Tasks.Phx.Swagger.Generate do
   end
 
   defp swagger_document(router, endpoint) do
+    routes = router.__routes__()
+    controllers = load_controllers(routes)
+
     router
     |> collect_info()
     |> collect_host(endpoint)
-    |> collect_paths(router)
-    |> collect_definitions(router)
+    |> collect_paths(routes, controllers)
+    |> collect_definitions(controllers)
     |> sort_paths_and_definitions()
     |> PhoenixSwagger.json_library().encode!(pretty: true)
   end
@@ -135,10 +143,27 @@ defmodule Mix.Tasks.Phx.Swagger.Generate do
     }
   end
 
-  defp collect_paths(swagger_map, router) do
-    router.__routes__()
+  # Many routes share a controller, so load each one once.
+  defp load_controllers(routes) do
+    routes
+    |> Enum.map(&find_controller/1)
+    |> Enum.uniq()
+    |> Enum.filter(fn controller ->
+      case Code.ensure_compiled(controller) do
+        {:module, _} ->
+          true
+
+        _ ->
+          Logger.warning("Warning: #{controller} module didn't load.")
+          false
+      end
+    end)
+  end
+
+  defp collect_paths(swagger_map, routes, controllers) do
+    routes
     |> Enum.map(&find_swagger_path_function/1)
-    |> Enum.filter(&(!is_nil(&1)))
+    |> Enum.filter(&(&1 && &1.controller in controllers))
     |> Enum.filter(&controller_function_exported?/1)
     |> Enum.map(&get_swagger_path/1)
     |> Enum.reduce(swagger_map, &merge_paths/2)
@@ -161,24 +186,12 @@ defmodule Mix.Tasks.Phx.Swagger.Generate do
   end
 
   defp generate_swagger_path_function(route, action, path, verb) do
-    controller = find_controller(route)
-    swagger_fun = "swagger_path_#{action}" |> String.to_atom()
-
-    loaded? = Code.ensure_compiled(controller)
-
-    case loaded? do
-      {:module, _} ->
-        %{
-          controller: controller,
-          swagger_fun: swagger_fun,
-          path: format_path(path),
-          verb: verb
-        }
-
-      _ ->
-        Logger.warning("Warning: #{controller} module didn't load.")
-        nil
-    end
+    %{
+      controller: find_controller(route),
+      swagger_fun: String.to_atom("swagger_path_#{action}"),
+      path: format_path(path),
+      verb: verb
+    }
   end
 
   defp format_path(path) do
@@ -205,7 +218,7 @@ defmodule Mix.Tasks.Phx.Swagger.Generate do
   defp collect_host(swagger_map, nil), do: swagger_map
 
   defp collect_host(swagger_map, endpoint) do
-    endpoint_config = Application.get_env(app_name(), endpoint)
+    endpoint_config = Application.get_env(app_name(), endpoint, [])
 
     case Keyword.get(endpoint_config, :url) do
       nil -> swagger_map
@@ -236,10 +249,8 @@ defmodule Mix.Tasks.Phx.Swagger.Generate do
     end
   end
 
-  defp collect_definitions(swagger_map, router) do
-    router.__routes__()
-    |> Enum.map(&find_controller/1)
-    |> Enum.uniq()
+  defp collect_definitions(swagger_map, controllers) do
+    controllers
     |> Enum.filter(&function_exported?(&1, :swagger_definitions, 0))
     |> Enum.map(&apply(&1, :swagger_definitions, []))
     |> Enum.reduce(swagger_map, &merge_definitions/2)

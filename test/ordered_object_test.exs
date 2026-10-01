@@ -10,12 +10,11 @@ defmodule PhoenixSwagger.OrderedObjectTest do
       end
       |> OrderedObject.new()
 
-    for encoder <- [Jason, Poison], pretty <- [false, true] do
-      json = encoder.encode!(object, pretty: pretty)
+    for pretty <- [false, true] do
+      json = Jason.encode!(object, pretty: pretty)
       keys = Regex.scan(~r/"key\d+"/, json) |> Enum.map(&hd/1)
 
-      assert keys == Enum.sort(keys),
-             "#{inspect(encoder)} pretty=#{pretty} did not sort keys: #{inspect(keys)}"
+      assert keys == Enum.sort(keys), "pretty=#{pretty} did not sort keys: #{inspect(keys)}"
     end
   end
 
@@ -27,7 +26,6 @@ defmodule PhoenixSwagger.OrderedObjectTest do
 
   test "encodes an empty object" do
     assert Jason.encode!(OrderedObject.new(%{})) == "{}"
-    assert Poison.encode!(OrderedObject.new(%{})) == "{}"
   end
 
   test "sorts paths by tag, then by path" do
