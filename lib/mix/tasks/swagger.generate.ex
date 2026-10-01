@@ -45,18 +45,23 @@ defmodule Mix.Tasks.Phx.Swagger.Generate do
       """)
     end
 
-    Enum.each(swagger_files, fn {output_file, config} ->
-      result =
+    results =
+      Enum.map(swagger_files, fn {output_file, config} ->
         with {:ok, router} <- attempt_load(config[:router]),
              {:ok, endpoint} <- attempt_load(config[:endpoint]) do
           write_file(output_file, swagger_document(router, endpoint))
+        else
+          {:error, reason} ->
+            Logger.warning("Failed to generate #{output_file}: #{reason}")
+            :failed
         end
+      end)
 
-      case result do
-        :ok -> :ok
-        {:error, reason} -> Logger.warning("Failed to generate #{output_file}: #{reason}")
-      end
-    end)
+    if results != [] and Enum.all?(results, &(&1 == :unchanged)) do
+      Logger.info("#{app_name()}: swagger files are up to date, nothing to generate")
+    end
+
+    :ok
   end
 
   @doc false
@@ -77,10 +82,12 @@ defmodule Mix.Tasks.Phx.Swagger.Generate do
       # Touch the file so `compile.phoenix_swagger` sees it as fresh.
       {:ok, ^contents} ->
         File.touch!(output_file)
+        :unchanged
 
       _ ->
         File.write!(output_file, contents)
         Logger.info("#{app_name()}: generated #{output_file}")
+        :generated
     end
   end
 

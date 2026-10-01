@@ -29,6 +29,8 @@
     instead of resolving it again for every test module.
   * `mix phx.swagger.generate` no longer crashes when the endpoint has no
     application config, and loads each controller once.
+  * `mix phx.swagger.generate` logs that the swagger files are up to date when
+    nothing changed.
   * `compile.phoenix_swagger` skips generation when the swagger files are newer
     than the build, and returns `{status, diagnostics}` as Mix expects.
   * Default tags strip only the trailing `Controller` from the module name.

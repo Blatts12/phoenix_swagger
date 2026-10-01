@@ -91,6 +91,15 @@ defmodule Mix.Tasks.Phx.Swagger.GenerateTest do
     refute output |> File.read!() |> Jason.decode!() |> Map.has_key?("host")
   end
 
+  test "logs that swagger files are up to date when nothing changed" do
+    first_run = ExUnit.CaptureLog.capture_log(fn -> Mix.Task.run("phx.swagger.generate") end)
+    refute first_run =~ "up to date"
+
+    second_run = ExUnit.CaptureLog.capture_log(fn -> Mix.Task.run("phx.swagger.generate") end)
+    assert second_run =~ "phoenix_swagger: swagger files are up to date, nothing to generate"
+    refute second_run =~ "generated"
+  end
+
   defp tagged_paths(tag) do
     remainder = if tag == "A", do: 0, else: 1
 
