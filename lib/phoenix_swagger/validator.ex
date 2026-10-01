@@ -160,7 +160,7 @@ defmodule PhoenixSwagger.Validator do
           ref = parameter["schema"]["$ref"] |> String.split("/") |> List.last()
           {Map.merge(schema, definitions[ref]), properties}
         else
-          {schema, Map.put(properties, parameter["name"], %{"type" => parameter["type"]})}
+          {schema, Map.put(properties, parameter["name"], parameter_schema(parameter))}
         end
       end)
 
@@ -171,6 +171,17 @@ defmodule PhoenixSwagger.Validator do
     else
       Map.update(schema, "properties", properties, &Map.merge(&1, properties))
     end
+  end
+
+  # Swagger 2's `file` type is valid on formData parameters, but JSON Schema
+  # has no such type. Leave the public specification unchanged and accept an
+  # unconstrained object here so multipart uploads reach domain validation.
+  defp parameter_schema(%{"in" => "formData", "type" => "file"}) do
+    %{"type" => "object"}
+  end
+
+  defp parameter_schema(%{"type" => type}) do
+    %{"type" => type}
   end
 
   defp query_descriptors(parameters) do

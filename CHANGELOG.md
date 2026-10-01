@@ -13,6 +13,8 @@
   * Treat `application/json` in a negotiated `Accept` header as JSON.
   * Default `json_library` to Jason, with a clear error when none is configured.
   * Write `definitions` in alphabetical order, and `paths` grouped by tag, in generated Swagger files.
+  * Accept Swagger 2 `formData` `file` parameters during validation by treating
+    them as unconstrained objects in the compiled schema.
 
 ## v0.8.5 - 2025-08-25
 

@@ -71,6 +71,51 @@ defmodule ValidatorTest do
     end
   end
 
+  test "formData file parameters validate as unconstrained objects" do
+    path =
+      Path.join(
+        System.tmp_dir!(),
+        "phoenix_swagger_file_#{System.unique_integer([:positive])}.json"
+      )
+
+    File.write!(path, """
+    {
+      "swagger": "2.0",
+      "info": {"title": "Files", "version": "1.0.0"},
+      "paths": {
+        "/uploads": {
+          "post": {
+            "parameters": [
+              {"name": "document", "in": "formData", "type": "file", "required": true},
+              {"name": "title", "in": "formData", "type": "string"}
+            ]
+          }
+        }
+      }
+    }
+    """)
+
+    on_exit(fn -> File.rm(path) end)
+
+    schemas = Map.new(Validator.parse_swagger_schema(path))
+    properties = schemas["/post/uploads"].schema["properties"]
+
+    assert %{"type" => "object"} = properties["document"]
+    assert %{"type" => "string"} = properties["title"]
+
+    upload = %Plug.Upload{
+      path: "/tmp/doc.pdf",
+      filename: "doc.pdf",
+      content_type: "application/pdf"
+    }
+
+    assert :ok =
+             Validator.validate("/post/uploads", %{"document" => upload, "title" => "Notes"})
+
+    assert {:error, "Type mismatch. Expected Object but got String.", "#/document"} =
+             Validator.validate("/post/uploads", %{"document" => "doc.pdf", "title" => "Notes"})
+  end
+
   test "parse_swagger_schema/1 raises when the file is not valid JSON" do
     path = Path.join(System.tmp_dir!(), "phoenix_swagger_invalid_#{System.unique_integer()}.json")
     File.write!(path, "{not json")
