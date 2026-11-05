@@ -82,7 +82,54 @@ defmodule PhoenixSwagger.PathTest do
     end
   end
 
-  test "swagger_path_show produces expected swagger json" do
+  swagger_path :upload do
+    post("/api/v1/avatars")
+    parameter(:avatar, :formData, :file, "Avatar")
+    parameter(:name, :formData, :string, "Name", required: true)
+    response(201, "Created")
+  end
+
+  swagger_path :login do
+    post("/api/v1/login")
+    parameter(:email, :formData, :string, "Email")
+    response(200, "OK")
+  end
+
+  swagger_path :login_multipart do
+    post("/api/v1/login")
+    consumes("multipart/form-data")
+    parameter(:email, :formData, :string, "Email")
+    response(200, "OK")
+  end
+
+  swagger_path :mixed do
+    post("/api/v1/mixed")
+    parameter(:user, :body, Schema.ref(:User), "User")
+    parameter(:avatar, :formData, :file, "Avatar")
+    response(200, "OK")
+  end
+
+  swagger_path :rate_limited do
+    get("/api/v1/limited")
+
+    response(200, "OK", :User,
+      headers: %{"X-Rate-Limit" => %{type: :integer, description: "Calls per hour"}},
+      examples: %{"application/json" => %{id: 1}}
+    )
+  end
+
+  swagger_path :xml_late_produces do
+    get("/api/v1/xml")
+    response(200, "OK", :User)
+    produces("application/xml")
+  end
+
+  swagger_path :no_responses do
+    get("/api/v1/nothing")
+    parameter(:q, :query, :string, "Query", deprecated: true)
+  end
+
+  test "swagger_path_show produces expected OpenAPI json" do
     route = %{verb: :get, path: "/api/v1/users/{id}"}
 
     assert swagger_path_show(route) == %{
@@ -96,15 +143,17 @@ defmodule PhoenixSwagger.PathTest do
                      "in" => "path",
                      "name" => "id",
                      "required" => true,
-                     "type" => "string",
-                     "x-example" => "123"
+                     "schema" => %{"type" => "string"},
+                     "example" => "123"
                    }
                  ],
                  "responses" => %{
                    "200" => %{
                      "description" => "OK",
-                     "schema" => %{
-                       "$ref" => "#/definitions/User"
+                     "content" => %{
+                       "application/json" => %{
+                         "schema" => %{"$ref" => "#/components/schemas/User"}
+                       }
                      }
                    }
                  },
@@ -115,13 +164,12 @@ defmodule PhoenixSwagger.PathTest do
            }
   end
 
-  test "swagger_path_index produces expected swagger json" do
+  test "swagger_path_index produces expected OpenAPI json" do
     route = %{verb: :get, path: "/api/v1/users/"}
 
     assert swagger_path_index(route) == %{
              "/api/v1/users" => %{
                "get" => %{
-                 "produces" => ["application/json"],
                  "tags" => ["Users"],
                  "operationId" => "list_users",
                  "summary" => "Query for users",
@@ -132,49 +180,50 @@ defmodule PhoenixSwagger.PathTest do
                      "in" => "query",
                      "name" => "page_size",
                      "required" => false,
-                     "type" => "integer",
-                     "minimum" => 1
+                     "schema" => %{"type" => "integer", "minimum" => 1}
                    },
                    %{
                      "description" => "Number of the page",
                      "in" => "query",
                      "name" => "page",
                      "required" => false,
-                     "type" => "integer",
-                     "minimum" => 1
+                     "schema" => %{"type" => "integer", "minimum" => 1}
                    },
                    %{
                      "description" => "Address Zip Code",
                      "in" => "query",
                      "name" => "zipcode",
                      "required" => true,
-                     "type" => "string",
-                     "x-example" => "90210"
+                     "schema" => %{"type" => "string"},
+                     "example" => "90210"
                    },
                    %{
-                     "collectionFormat" => "csv",
                      "description" => "Related resources to include in response",
                      "in" => "query",
-                     "items" => %{
-                       "type" => "string",
-                       "enum" => ["organisation", "favourites", "purchases"]
-                     },
                      "name" => "include",
                      "required" => false,
-                     "type" => "array"
+                     "style" => "form",
+                     "explode" => false,
+                     "schema" => %{
+                       "type" => "array",
+                       "items" => %{
+                         "type" => "string",
+                         "enum" => ["organisation", "favourites", "purchases"]
+                       }
+                     }
                    }
                  ],
                  "responses" => %{
                    "200" => %{
                      "description" => "OK",
-                     "schema" => %{
-                       "$ref" => "#/definitions/Users"
-                     },
-                     "examples" => %{
+                     "content" => %{
                        "application/json" => %{
-                         "email" => "joe@gmail.com",
-                         "id" => 1,
-                         "name" => "Joe"
+                         "schema" => %{"$ref" => "#/components/schemas/Users"},
+                         "example" => %{
+                           "email" => "joe@gmail.com",
+                           "id" => 1,
+                           "name" => "Joe"
+                         }
                        }
                      }
                    },
@@ -187,74 +236,77 @@ defmodule PhoenixSwagger.PathTest do
            }
   end
 
-  test "swagger_path_create produces expected swagger json" do
+  test "swagger_path_create produces expected OpenAPI json" do
     route = %{verb: :post, path: "/api/v1/users/"}
 
     assert swagger_path_create(route) == %{
              "/api/v1/{team}/users" => %{
                "post" => %{
-                 "consumes" => ["application/json"],
                  "description" => "",
                  "operationId" => "PhoenixSwagger.PathTest.create",
+                 "requestBody" => %{
+                   "description" => "user attributes",
+                   "required" => false,
+                   "content" => %{
+                     "application/json" => %{
+                       "schema" => %{"$ref" => "#/components/schemas/User"}
+                     }
+                   }
+                 },
                  "parameters" => [
-                   %{
-                     "description" => "user attributes",
-                     "in" => "body",
-                     "name" => "user",
-                     "required" => false,
-                     "schema" => %{"$ref" => "#/definitions/User"}
-                   },
                    %{
                      "description" => "Users team ID",
                      "in" => "path",
                      "name" => "team",
                      "required" => true,
-                     "type" => "string"
+                     "schema" => %{"type" => "string"}
                    }
                  ],
-                 "produces" => ["application/json"],
                  "responses" => %{
                    "200" => %{
                      "description" => "OK",
-                     "schema" => %{
-                       "type" => "object",
-                       "title" => "User",
-                       "description" => "A user of the application",
-                       "properties" => %{
-                         "address" => %{
-                           "description" => "Home adress",
-                           "type" => "string"
-                         },
-                         "id" => %{
-                           "description" => "Unique identifier",
-                           "type" => "string"
-                         },
-                         "name" => %{
-                           "description" => "Users name",
-                           "type" => "string"
-                         },
-                         "preferences" => %{
+                     "content" => %{
+                       "application/json" => %{
+                         "schema" => %{
+                           "type" => "object",
+                           "title" => "User",
+                           "description" => "A user of the application",
                            "properties" => %{
-                             "send_special_offers" => %{
-                               "default" => true,
-                               "description" => "special offers list subscription",
-                               "type" => "boolean"
+                             "address" => %{
+                               "description" => "Home adress",
+                               "type" => "string"
                              },
-                             "subscribe_to_mailing_list" => %{
-                               "default" => true,
-                               "description" => "mailing list subscription",
-                               "type" => "boolean"
+                             "id" => %{
+                               "description" => "Unique identifier",
+                               "type" => "string"
                              },
-                             "phone_number" => %{
-                               "description" => "specified phone",
-                               "type" => "string",
-                               "x-nullable" => true
+                             "name" => %{
+                               "description" => "Users name",
+                               "type" => "string"
+                             },
+                             "preferences" => %{
+                               "properties" => %{
+                                 "send_special_offers" => %{
+                                   "default" => true,
+                                   "description" => "special offers list subscription",
+                                   "type" => "boolean"
+                                 },
+                                 "subscribe_to_mailing_list" => %{
+                                   "default" => true,
+                                   "description" => "mailing list subscription",
+                                   "type" => "boolean"
+                                 },
+                                 "phone_number" => %{
+                                   "description" => "specified phone",
+                                   "type" => ["string", "null"]
+                                 }
+                               },
+                               "type" => "object"
                              }
                            },
-                           "type" => "object"
+                           "required" => ["id", "name"]
                          }
-                       },
-                       "required" => ["id", "name"]
+                       }
                      }
                    }
                  },
@@ -265,13 +317,12 @@ defmodule PhoenixSwagger.PathTest do
            }
   end
 
-  test "swagger_path_update produces expected swagger json" do
+  test "swagger_path_update produces expected OpenAPI json" do
     route = %{verb: :patch, path: "/api/v1/users/{id}"}
 
     assert swagger_path_update(route) == %{
              "/api/v1/user/{id}" => %{
                "patch" => %{
-                 "consumes" => ["application/json"],
                  "description" => "",
                  "operationId" => "PhoenixSwagger.PathTest.update",
                  "parameters" => [
@@ -280,12 +331,14 @@ defmodule PhoenixSwagger.PathTest do
                      "in" => "query",
                      "name" => "name",
                      "required" => true,
-                     "type" => "string"
+                     "schema" => %{"type" => "string"}
                    }
                  ],
-                 "produces" => ["application/json"],
                  "responses" => %{
-                   "200" => %{"description" => "OK", "schema" => %{"type" => "string"}}
+                   "200" => %{
+                     "description" => "OK",
+                     "content" => %{"application/json" => %{"schema" => %{"type" => "string"}}}
+                   }
                  },
                  "summary" => "Update a users name",
                  "tags" => ["PathTest"]
@@ -302,11 +355,10 @@ defmodule PhoenixSwagger.PathTest do
                "get" => %{
                  "description" => "",
                  "operationId" => "PhoenixSwagger.PathTest.health_check",
-                 "parameters" => [],
                  "responses" => %{
                    "200" => %{
                      "description" => "OK",
-                     "schema" => %{"type" => "string"}
+                     "content" => %{"application/json" => %{"schema" => %{"type" => "string"}}}
                    }
                  },
                  "summary" => "verb and path will be taken from router",
@@ -314,6 +366,97 @@ defmodule PhoenixSwagger.PathTest do
                }
              }
            }
+  end
+
+  test "formData with a file becomes a multipart request body" do
+    operation = swagger_path_upload(%{})["/api/v1/avatars"]["post"]
+
+    refute Map.has_key?(operation, "parameters")
+
+    assert operation["requestBody"] == %{
+             "required" => true,
+             "content" => %{
+               "multipart/form-data" => %{
+                 "schema" => %{
+                   "type" => "object",
+                   "properties" => %{
+                     "avatar" => %{
+                       "description" => "Avatar",
+                       "contentMediaType" => "application/octet-stream"
+                     },
+                     "name" => %{"type" => "string", "description" => "Name"}
+                   },
+                   "required" => ["name"]
+                 }
+               }
+             }
+           }
+  end
+
+  test "formData without a file becomes a urlencoded request body" do
+    body = swagger_path_login(%{})["/api/v1/login"]["post"]["requestBody"]
+    assert Map.keys(body["content"]) == ["application/x-www-form-urlencoded"]
+    assert body["required"] == false
+  end
+
+  test "a form media type listed in consumes wins" do
+    body = swagger_path_login_multipart(%{})["/api/v1/login"]["post"]["requestBody"]
+    assert Map.keys(body["content"]) == ["multipart/form-data"]
+  end
+
+  test "mixing body and formData parameters raises" do
+    assert_raise ArgumentError, ~r/body.*formData/, fn -> swagger_path_mixed(%{}) end
+  end
+
+  test "response headers become Header Objects and legacy examples move into content" do
+    response = swagger_path_rate_limited(%{})["/api/v1/limited"]["get"]["responses"]["200"]
+
+    assert response["headers"] == %{
+             "X-Rate-Limit" => %{
+               "description" => "Calls per hour",
+               "schema" => %{"type" => "integer"}
+             }
+           }
+
+    assert response["content"]["application/json"]["example"] == %{"id" => 1}
+  end
+
+  test "produces declared after a response still keys its content" do
+    response = swagger_path_xml_late_produces(%{})["/api/v1/xml"]["get"]["responses"]["200"]
+    assert Map.keys(response["content"]) == ["application/xml"]
+  end
+
+  test "operation without responses omits the responses key" do
+    operation = swagger_path_no_responses(%{})["/api/v1/nothing"]["get"]
+    refute Map.has_key?(operation, "responses")
+    assert [%{"deprecated" => true}] = operation["parameters"]
+  end
+
+  describe "collectionFormat maps to style and explode" do
+    defp render_array_parameter(location, collection_format) do
+      %PhoenixSwagger.Path.PathObject{}
+      |> PhoenixSwagger.Path.parameter(:ids, location, :array, "IDs",
+        items: [type: :integer],
+        collectionFormat: collection_format
+      )
+      |> then(& &1.operation.parameters)
+      |> hd()
+      |> PhoenixSwagger.to_json()
+    end
+
+    test "ssv, pipes and multi" do
+      assert %{"style" => "spaceDelimited"} = render_array_parameter(:query, :ssv)
+      assert %{"style" => "pipeDelimited"} = render_array_parameter(:query, :pipes)
+      assert %{"style" => "form", "explode" => true} = render_array_parameter(:query, :multi)
+    end
+
+    test "csv on a path parameter is simple" do
+      assert %{"style" => "simple"} = render_array_parameter(:path, :csv)
+    end
+
+    test "tsv has no OpenAPI 3 equivalent" do
+      assert_raise ArgumentError, ~r/tsv/, fn -> render_array_parameter(:query, :tsv) end
+    end
   end
 
   test "default tag strips only the trailing Controller suffix" do
