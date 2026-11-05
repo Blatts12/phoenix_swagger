@@ -823,6 +823,17 @@ defmodule PhoenixSwagger.Schema do
     |> Map.put(:anyOf, [%Schema{"$ref": ref}, %Schema{type: :null}])
   end
 
+  defp apply_nullable(%{nullable: true, allOf: all_of} = schema) when is_list(all_of) do
+    schema
+    |> Map.merge(%{nullable: nil, allOf: nil})
+    |> Map.put(:anyOf, [%Schema{allOf: all_of}, %Schema{type: :null}])
+  end
+
+  defp apply_nullable(%{nullable: true, enum: values} = schema) when is_list(values) do
+    %{schema | nullable: nil, enum: add_null_enum_value(values)}
+  end
+
+  # Without a type, ref, composition or enum the schema already accepts null.
   defp apply_nullable(schema), do: %{schema | nullable: nil}
 
   defp add_null_type(types) when is_list(types) do

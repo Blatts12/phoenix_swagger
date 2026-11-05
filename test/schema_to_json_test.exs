@@ -66,6 +66,22 @@ defmodule PhoenixSwagger.SchemaToJsonTest do
            }
   end
 
+  test "nullable composition becomes anyOf with null" do
+    schema = %Schema{allOf: [Schema.ref(:Pet)], description: "Owner pet"} |> Schema.nullable(true)
+
+    assert to_json(schema) == %{
+             "description" => "Owner pet",
+             "anyOf" => [
+               %{"allOf" => [%{"$ref" => "#/components/schemas/Pet"}]},
+               %{"type" => "null"}
+             ]
+           }
+  end
+
+  test "nullable untyped enum accepts null" do
+    assert to_json(Schema.nullable(%Schema{enum: [:a]}, true)) == %{"enum" => ["a", nil]}
+  end
+
   test "discriminator becomes a Discriminator Object" do
     json = to_json(%Schema{type: :object} |> Schema.discriminator(:pet_type))
     assert json["discriminator"] == %{"propertyName" => "pet_type"}

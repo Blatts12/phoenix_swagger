@@ -237,16 +237,20 @@ defmodule PhoenixSwagger.Path do
 
   defp build_parameter(name, location, type, description, opts) do
     {collection_format, opts} = Keyword.pop(opts, :collectionFormat)
+    {extensions, opts} = Enum.split_with(opts, &specification_extension?/1)
     {parameter_opts, schema_opts} = Keyword.split(opts, @parameter_option_keys)
 
     schema =
       struct!(%Schema{type: type}, Enum.map(schema_opts, &convert_items_option_to_schema/1))
 
     %Parameter{name: name, in: location, description: description, schema: schema}
-    |> struct!(parameter_opts)
     |> struct!(style_options(location, type, collection_format))
+    |> struct!(parameter_opts)
+    |> Map.merge(Map.new(extensions))
     |> require_path_parameter()
   end
+
+  defp specification_extension?({key, _value}), do: String.starts_with?(to_string(key), "x-")
 
   defp convert_items_option_to_schema({:items, items}) when is_list(items),
     do: {:items, struct!(Schema, items)}

@@ -432,6 +432,26 @@ defmodule PhoenixSwagger.PathTest do
     assert [%{"deprecated" => true}] = operation["parameters"]
   end
 
+  defp render_query_parameter(type, opts) do
+    %PhoenixSwagger.Path.PathObject{}
+    |> PhoenixSwagger.Path.parameter(:ids, :query, type, "IDs", opts)
+    |> then(&hd(&1.operation.parameters))
+    |> PhoenixSwagger.to_json()
+  end
+
+  test "explicit style and explode win over the array default" do
+    assert %{"style" => "form", "explode" => true} =
+             render_query_parameter(:array, items: [type: :integer], explode: true)
+
+    assert %{"style" => "pipeDelimited"} =
+             render_query_parameter(:array, items: [type: :integer], style: "pipeDelimited")
+  end
+
+  test "parameter specification extensions pass through" do
+    assert %{"x-internal" => true, "schema" => %{"type" => "string"}} =
+             render_query_parameter(:string, "x-internal": true)
+  end
+
   describe "collectionFormat maps to style and explode" do
     defp render_array_parameter(location, collection_format) do
       %PhoenixSwagger.Path.PathObject{}
