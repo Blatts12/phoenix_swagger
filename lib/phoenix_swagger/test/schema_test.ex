@@ -1,6 +1,6 @@
 defmodule PhoenixSwagger.SchemaTest do
   @moduledoc """
-  Testing helper module that makes it convenient to assert that phoenix controller responses conform to a swagger spec.
+  Testing helper module that makes it convenient to assert that phoenix controller responses conform to an OpenAPI spec.
 
   ## Example
 
@@ -20,11 +20,11 @@ defmodule PhoenixSwagger.SchemaTest do
 
   Errors will be output with the json-path of the location in the response body for the error:
 
-      Response JSON does not conform to swagger schema from #/definitions/UserResponse.
-      At #/data/email: Expected "foobaz" to be an email address.
+      Response JSON does not conform to OpenAPI schema from #/components/schemas/UserResponse.
+      At #/data/name: value is not of type string
       {
         "data": {
-          "name": "Yu Ser",
+          "name": 42,
           "id": 141,
           "email": "foobaz"
         }
@@ -65,16 +65,27 @@ defmodule PhoenixSwagger.SchemaTest do
     end
   end
 
+  # Builds one JSV key per entry in `components.schemas`, so each test only
+  # looks a key up.
   defp resolve_swagger_schema(swagger_file) do
-    swagger_file
-    |> File.read!()
-    |> PhoenixSwagger.json_library().decode!()
-    |> Map.update("definitions", %{}, &PhoenixSwagger.Validator.swagger_nullable_to_json_schema/1)
-    |> ExJsonSchema.Schema.resolve()
+    document = swagger_file |> File.read!() |> PhoenixSwagger.json_library().decode!()
+    components = document["components"] || %{}
+
+    {root_key, _normalized, ctx} =
+      JSV.build_add!(JSV.build_init!(), %{"components" => components})
+
+    {keys, ctx} =
+      Enum.map_reduce(Map.keys(components["schemas"] || %{}), ctx, fn name, ctx ->
+        ref = JSV.Ref.parse!("#/components/schemas/#{name}", :root)
+        {key, ctx} = JSV.build_key!(ctx, ref)
+        {{name, key}, ctx}
+      end)
+
+    %{root: JSV.to_root!(ctx, root_key), keys: Map.new(keys)}
   end
 
   @doc """
-  Validates a response body against a swagger schema.
+  Validates a response body against a schema in `components.schemas`.
 
   ## Example
 
@@ -91,18 +102,21 @@ defmodule PhoenixSwagger.SchemaTest do
         assert response["data"]["id"] == 123
       end
   """
-  def validate_resp_schema(conn, swagger_schema, model_name) do
+  def validate_resp_schema(conn, %{root: root, keys: keys}, model_name) do
     response_data = conn.resp_body |> PhoenixSwagger.json_library().decode!()
-    fragment = ExJsonSchema.Schema.get_fragment!(swagger_schema, "#/definitions/#{model_name}")
-    result = ExJsonSchema.Validator.validate_fragment(swagger_schema, fragment, response_data)
 
-    case result do
+    key =
+      Map.get_lazy(keys, model_name, fn ->
+        ExUnit.Assertions.flunk(~s(No schema named "#{model_name}" in #/components/schemas))
+      end)
+
+    case PhoenixSwagger.Validator.validate_value_against_key(root, key, response_data) do
       :ok ->
         conn
 
       {:error, errors} ->
         headline =
-          "Response JSON does not conform to swagger schema from #/definitions/#{model_name}."
+          "Response JSON does not conform to OpenAPI schema from #/components/schemas/#{model_name}."
 
         error_details =
           errors

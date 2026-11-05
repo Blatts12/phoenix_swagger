@@ -456,34 +456,6 @@ defmodule PhoenixSwagger.Validator do
     [method | String.split(base_path, "/", trim: true) ++ path_segments]
   end
 
-  @doc false
-  # Swagger 2.0 and JSON Schema differ in the treatment of nulls. Only
-  # `PhoenixSwagger.SchemaTest` still calls this, until it reads OpenAPI 3.2.
-  def swagger_nullable_to_json_schema(schema = %{"type" => type, "x-nullable" => true})
-      when is_binary(type) do
-    schema
-    |> Map.put("type", [type, "null"])
-    |> swagger_nullable_to_json_schema()
-  end
-
-  def swagger_nullable_to_json_schema(schema = %{"$ref" => ref, "x-nullable" => true})
-      when is_binary(ref) do
-    schema
-    |> Map.drop(["$ref", "x-nullable"])
-    |> Map.put("oneOf", [%{"type" => "null"}, %{"$ref" => ref}])
-    |> swagger_nullable_to_json_schema()
-  end
-
-  def swagger_nullable_to_json_schema(schema) when is_map(schema) do
-    Map.new(schema, fn {k, v} -> {k, swagger_nullable_to_json_schema(v)} end)
-  end
-
-  def swagger_nullable_to_json_schema(schema) when is_list(schema) do
-    Enum.map(schema, &swagger_nullable_to_json_schema/1)
-  end
-
-  def swagger_nullable_to_json_schema(other), do: other
-
   defp read_openapi_document!(file) do
     document =
       file

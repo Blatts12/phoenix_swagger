@@ -18,8 +18,6 @@ defmodule PhoenixSwagger.Mixfile do
       dialyzer: [plt_add_apps: [:mix, :ex_unit]],
       xref: [
         exclude: [
-          ExJsonSchema.Schema,
-          ExJsonSchema.Validator,
           JSV,
           JSV.Ref
         ]
@@ -34,7 +32,7 @@ defmodule PhoenixSwagger.Mixfile do
   end
 
   defp extra_applications(:test) do
-    [:jason, :ex_json_schema, :jsv]
+    [:jason, :jsv]
   end
 
   defp extra_applications(_), do: []
@@ -45,7 +43,6 @@ defmodule PhoenixSwagger.Mixfile do
   defp deps do
     [
       {:jason, "~> 1.4", optional: true},
-      {:ex_json_schema, "~> 0.9", optional: true},
       {:jsv, "~> 0.27", optional: true},
       {:plug, "~> 1.14"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
