@@ -52,6 +52,20 @@ defmodule PhoenixSwagger.Plug.SwaggerUITest do
     assert get_header(headers, "content-encoding") == "gzip"
   end
 
+  test "serves the script the OAuth2 redirect page loads" do
+    opts = SwaggerUI.init(otp_app: :phoenix_swagger, swagger_file: "swagger.json")
+    conn = :get |> conn("/oauth2-redirect.js") |> SwaggerUI.call(opts)
+
+    assert {200, _headers, _body} = sent_resp(conn)
+  end
+
+  test "bundles a swagger-ui that reads OpenAPI 3.2" do
+    version =
+      "priv/static/package.json" |> File.read!() |> Jason.decode!() |> Map.fetch!("version")
+
+    assert Version.match?(version, ">= 5.32.0")
+  end
+
   defp get_header(headers, name) do
     {^name, value} = List.keyfind(headers, name, 0)
     value
