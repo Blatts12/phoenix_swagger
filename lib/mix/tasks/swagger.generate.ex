@@ -4,10 +4,10 @@ defmodule Mix.Tasks.Phx.Swagger.Generate do
 
   @recursive true
 
-  @shortdoc "Generates swagger.json file based on phoenix router"
+  @shortdoc "Generates an OpenAPI 3.2 JSON file based on phoenix router"
 
   @moduledoc """
-  Generates swagger.json file based on phoenix router and controllers.
+  Generates an OpenAPI 3.2 JSON file based on phoenix router and controllers.
 
   Usage:
 
@@ -24,6 +24,21 @@ defmodule Mix.Tasks.Phx.Swagger.Generate do
 
   @default_title "<enter your title>"
   @default_version "0.0.1"
+  @openapi_version "3.2.0"
+  @component_key_pattern ~r/^[a-zA-Z0-9\.\-_]+$/
+
+  @swagger2_replacements %{
+    "swagger" => ~s(remove it, phoenix_swagger sets "openapi"),
+    "host" => ~s(servers: [%{url: "https://host/base_path"}]),
+    "basePath" => ~s(servers: [%{url: "/base_path"}]),
+    "schemes" => ~s(servers: [%{url: "https://host"}]),
+    "consumes" => "consumes/2 in each swagger_path",
+    "produces" => "produces/2 in each swagger_path",
+    "definitions" => "swagger_definitions/0 in controllers, or components: %{schemas: ...}",
+    "securityDefinitions" => "components: %{securitySchemes: ...}",
+    "parameters" => "components: %{parameters: ...}",
+    "responses" => "components: %{responses: ...}"
+  }
 
   defp app_name(), do: Mix.Project.get!().project()[:app]
 
@@ -99,23 +114,23 @@ defmodule Mix.Tasks.Phx.Swagger.Generate do
 
     router
     |> collect_info()
-    |> collect_host(endpoint)
+    |> collect_servers(endpoint)
     |> collect_paths(routes, controllers)
-    |> collect_definitions(controllers)
-    |> sort_paths_and_definitions()
+    |> collect_schemas(controllers)
+    |> sort_paths_and_schemas()
     |> PhoenixSwagger.json_library().encode!(pretty: true)
   end
 
-  defp sort_paths_and_definitions(swagger) do
-    swagger
+  defp sort_paths_and_schemas(document) do
+    document
     |> Map.update!(:paths, &PhoenixSwagger.OrderedObject.by_tag/1)
-    |> Map.update!(:definitions, &PhoenixSwagger.OrderedObject.new/1)
+    |> update_in([:components, :schemas], &PhoenixSwagger.OrderedObject.new/1)
   end
 
   defp collect_info(router) do
     cond do
       function_exported?(router, :swagger_info, 0) ->
-        Map.merge(default_swagger_info(), router.swagger_info())
+        Map.merge(default_swagger_info(), reject_swagger2_keys!(router.swagger_info()))
 
       function_exported?(Mix.Project.get(), :swagger_info, 0) ->
         info =
@@ -133,14 +148,30 @@ defmodule Mix.Tasks.Phx.Swagger.Generate do
 
   def default_swagger_info do
     %{
-      swagger: "2.0",
+      openapi: @openapi_version,
       info: %{
         title: @default_title,
         version: @default_version
       },
       paths: %{},
-      definitions: %{}
+      components: %{schemas: %{}}
     }
+  end
+
+  defp reject_swagger2_keys!(info) do
+    Enum.each(info, fn {key, _value} ->
+      case @swagger2_replacements[to_string(key)] do
+        nil ->
+          :ok
+
+        replacement ->
+          raise ArgumentError,
+                "swagger_info/0 returns the Swagger 2.0 key #{key}. " <>
+                  "Use the OpenAPI 3.2 form instead: #{replacement}"
+      end
+    end)
+
+    info
   end
 
   # Many routes share a controller, so load each one once.
@@ -215,52 +246,66 @@ defmodule Mix.Tasks.Phx.Swagger.Generate do
     Map.merge(value1, value2)
   end
 
-  defp collect_host(swagger_map, nil), do: swagger_map
+  defp collect_servers(document, nil), do: document
 
-  defp collect_host(swagger_map, endpoint) do
+  defp collect_servers(document, endpoint) do
     endpoint_config = Application.get_env(app_name(), endpoint, [])
 
     case Keyword.get(endpoint_config, :url) do
-      nil -> swagger_map
-      _ -> collect_host_from_endpoint(swagger_map, endpoint_config)
+      nil -> document
+      _ -> collect_servers_from_endpoint(document, endpoint_config)
     end
   end
 
-  defp collect_host_from_endpoint(swagger_map, endpoint_config) do
+  defp collect_servers_from_endpoint(document, endpoint_config) do
     load_from_system_env = Keyword.get(endpoint_config, :load_from_system_env, false)
     url = Keyword.get(endpoint_config, :url)
     host = Keyword.get(url, :host, "localhost")
     port = Keyword.get(url, :port, 4000)
 
-    swagger_map =
-      if !load_from_system_env and is_binary(host) and (is_integer(port) or is_binary(port)) do
-        Map.put_new(swagger_map, :host, "#{host}:#{port}")
-      else
-        # host / port may be {:system, "ENV_VAR"} tuples or loaded in Endpoint.init callback
-        swagger_map
-      end
-
-    case endpoint_config[:https] do
-      nil ->
-        swagger_map
-
-      _ ->
-        Map.put_new(swagger_map, :schemes, ["https", "http"])
+    if !load_from_system_env and is_binary(host) and (is_integer(port) or is_binary(port)) do
+      servers = build_server_objects(url[:scheme], endpoint_config[:https], "#{host}:#{port}")
+      Map.put_new(document, :servers, servers)
+    else
+      # host / port may be {:system, "ENV_VAR"} tuples or loaded in Endpoint.init callback
+      document
     end
   end
 
-  defp collect_definitions(swagger_map, controllers) do
-    controllers
-    |> Enum.filter(&function_exported?(&1, :swagger_definitions, 0))
-    |> Enum.map(&apply(&1, :swagger_definitions, []))
-    |> Enum.reduce(swagger_map, &merge_definitions/2)
+  defp build_server_objects(scheme, _https, authority) when is_binary(scheme),
+    do: [%{url: "#{scheme}://#{authority}"}]
+
+  defp build_server_objects(nil, nil, authority) do
+    # Scheme-relative, so clients keep the scheme the document was served with.
+    [%{url: "//#{authority}"}]
+  end
+
+  defp build_server_objects(nil, _https, authority),
+    do: [%{url: "https://#{authority}"}, %{url: "http://#{authority}"}]
+
+  defp collect_schemas(document, controllers) do
+    schemas =
+      controllers
+      |> Enum.filter(&function_exported?(&1, :swagger_definitions, 0))
+      |> Enum.map(&apply(&1, :swagger_definitions, []))
+      |> Enum.reduce(%{}, &Map.merge(&2, &1))
+
+    Enum.each(Map.keys(schemas), &validate_component_key!/1)
+
+    Map.update(document, :components, %{schemas: schemas}, fn components ->
+      Map.update(components, :schemas, schemas, &Map.merge(&1, schemas))
+    end)
+  end
+
+  defp validate_component_key!(key) do
+    unless Regex.match?(@component_key_pattern, to_string(key)) do
+      raise ArgumentError,
+            "components.schemas key #{inspect(to_string(key))} must match " <>
+              Regex.source(@component_key_pattern)
+    end
   end
 
   defp find_controller(route_map) do
     Module.concat([:"Elixir" | Module.split(route_map.plug)])
-  end
-
-  defp merge_definitions(definitions, swagger_map = %{definitions: existing}) do
-    %{swagger_map | definitions: Map.merge(existing, definitions)}
   end
 end
