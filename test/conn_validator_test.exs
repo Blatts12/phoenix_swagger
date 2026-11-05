@@ -298,6 +298,78 @@ defmodule PhoenixSwagger.ConnValidatorTest do
     end
   end
 
+  describe "OpenAPI parameter serialization" do
+    setup do
+      Validator.parse_swagger_schema("test/test_spec/openapi_styles_spec.json")
+      :ok
+    end
+
+    test "form without explode splits on commas" do
+      assert {:ok, _} = ConnValidator.validate(build_conn(:get, "/csv?tags=a,b"))
+    end
+
+    test "pipeDelimited splits on pipes" do
+      assert {:ok, _} = ConnValidator.validate(build_conn(:get, "/pipes?tags=a|b"))
+
+      assert {:error, ~s(Value "a,b" is not allowed in enum.), "#/tags"} =
+               ConnValidator.validate(build_conn(:get, "/pipes?tags=a,b"))
+    end
+
+    test "spaceDelimited splits on spaces" do
+      assert {:ok, _} = ConnValidator.validate(build_conn(:get, "/spaces?tags=a%20b"))
+    end
+
+    test "default form explode reads every repeated key" do
+      assert {:ok, _} = ConnValidator.validate(build_conn(:get, "/exploded?ids=1&ids=2"))
+
+      assert {:error, "Type mismatch. Expected Integer but got something else.", "#/ids"} =
+               ConnValidator.validate(build_conn(:get, "/exploded?ids=1&ids=x"))
+
+      assert {:error, "Type mismatch. Expected Integer but got something else.", "#/ids"} =
+               ConnValidator.validate(build_conn(:get, "/exploded?ids=x&ids=1"))
+    end
+
+    test "path item parameters apply to every operation" do
+      assert {:ok, _} = ConnValidator.validate(build_path_conn(:get, "/shared/1", "1"))
+
+      assert {:error, "Type mismatch. Expected Integer but got something else.", "#/id"} =
+               ConnValidator.validate(build_path_conn(:get, "/shared/abc", "abc"))
+
+      assert {:error, "Type mismatch. Expected Boolean but got something else.", "#/verbose"} =
+               ConnValidator.validate(build_path_conn(:get, "/shared/1?verbose=maybe", "1"))
+    end
+
+    test "operation parameters replace path item parameters with the same name and location" do
+      assert {:ok, _} =
+               ConnValidator.validate(build_path_conn(:put, "/shared/1?verbose=yes", "1"))
+
+      assert {:error, ~s(Value "true" is not allowed in enum.), "#/verbose"} =
+               ConnValidator.validate(build_path_conn(:put, "/shared/1?verbose=true", "1"))
+    end
+
+    test "Authorization header and cookie parameters are not enforced" do
+      assert {:ok, _} = ConnValidator.validate(build_conn(:get, "/secured"))
+    end
+
+    test "querystring parameters are not enforced" do
+      assert {:ok, _} = ConnValidator.validate(build_conn(:get, "/raw"))
+    end
+
+    test "QUERY and TRACE operations match their methods" do
+      assert {:ok, _} = ConnValidator.validate(build_conn(:query, "/search?limit=5"))
+
+      assert {:error, "Type mismatch. Expected Integer but got something else.", "#/limit"} =
+               ConnValidator.validate(build_conn(:query, "/search?limit=five"))
+
+      assert {:ok, _} = ConnValidator.validate(build_conn(:trace, "/search"))
+    end
+  end
+
+  defp build_path_conn(method, path, id) do
+    conn = build_conn(method, path)
+    %{conn | path_params: %{"id" => id}, params: Map.put(conn.params, "id", id)}
+  end
+
   defp parse_spec!(spec) do
     path =
       Path.join(

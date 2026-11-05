@@ -8,7 +8,7 @@ defmodule PhoenixSwagger.OrderedObject do
 
   # Swagger path items store tags on each operation. `get` is the primary
   # operation when several methods on one path declare different tags.
-  @http_methods ~w(get put post delete options head patch)
+  @http_methods ~w(get put post delete options head patch trace query)
 
   defstruct pairs: []
 

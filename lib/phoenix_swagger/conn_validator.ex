@@ -53,7 +53,21 @@ defmodule PhoenixSwagger.ConnValidator do
     end
   end
 
-  defp fetch_parameter_value(%{key_path: key_path}, conn) do
+  # Exploded form arrays repeat the key (`ids=1&ids=2`). Plug keeps only the
+  # last value, so read every value from the raw query string.
+  defp fetch_parameter_value(
+         %{in: "query", type: "array", style: "form", explode: true, name: name} = parameter,
+         conn
+       ) do
+    case for {^name, value} <- URI.query_decoder(conn.query_string), do: value do
+      [] -> fetch_value_from_params(parameter, conn)
+      values -> values
+    end
+  end
+
+  defp fetch_parameter_value(parameter, conn), do: fetch_value_from_params(parameter, conn)
+
+  defp fetch_value_from_params(%{key_path: key_path}, conn) do
     Enum.reduce(key_path, conn.params, fn
       key, %{} = params -> Map.get(params, key)
       _key, _value -> nil
@@ -65,11 +79,11 @@ defmodule PhoenixSwagger.ConnValidator do
     type_mismatch(name, "Array")
   end
 
-  defp parse_parameter_value(%{type: "array", name: name, items: items}, value) do
+  defp parse_parameter_value(%{type: "array", name: name, items: items} = parameter, value) do
     items = items || %{}
 
-    value
-    |> split_array_value()
+    parameter
+    |> split_array_value(value)
     |> Enum.reduce_while({:ok, []}, fn item, {:ok, parsed} ->
       case parse_scalar_value(name, items["type"], items["enum"], item) do
         {:ok, item} -> {:cont, {:ok, [item | parsed]}}
@@ -86,8 +100,13 @@ defmodule PhoenixSwagger.ConnValidator do
     parse_scalar_value(name, type, enum, value)
   end
 
-  defp split_array_value(value) when is_binary(value), do: String.split(value, ",")
-  defp split_array_value(value) when is_list(value), do: value
+  # Delimiters from the spec's Style Values table. An exploded form array
+  # arrives as a list of repeated keys, so a lone string is one item.
+  defp split_array_value(_parameter, value) when is_list(value), do: value
+  defp split_array_value(%{style: "form", explode: true}, value), do: [value]
+  defp split_array_value(%{style: "spaceDelimited"}, value), do: String.split(value, " ")
+  defp split_array_value(%{style: "pipeDelimited"}, value), do: String.split(value, "|")
+  defp split_array_value(_parameter, value), do: String.split(value, ",")
 
   defp parse_scalar_value(name, type, enum, value) do
     case cast_value(type, value) do

@@ -1,0 +1,92 @@
+{
+  "openapi": "3.2.0",
+  "info": {"title": "Parameter styles", "version": "1.0.0"},
+  "paths": {
+    "/csv": {
+      "get": {
+        "parameters": [
+          {
+            "name": "tags",
+            "in": "query",
+            "style": "form",
+            "explode": false,
+            "schema": {"type": "array", "items": {"type": "string", "enum": ["a", "b"]}}
+          }
+        ]
+      }
+    },
+    "/pipes": {
+      "get": {
+        "parameters": [
+          {
+            "name": "tags",
+            "in": "query",
+            "style": "pipeDelimited",
+            "schema": {"type": "array", "items": {"type": "string", "enum": ["a", "b"]}}
+          }
+        ]
+      }
+    },
+    "/spaces": {
+      "get": {
+        "parameters": [
+          {
+            "name": "tags",
+            "in": "query",
+            "style": "spaceDelimited",
+            "schema": {"type": "array", "items": {"type": "string", "enum": ["a", "b"]}}
+          }
+        ]
+      }
+    },
+    "/exploded": {
+      "get": {
+        "parameters": [
+          {
+            "name": "ids",
+            "in": "query",
+            "schema": {"type": "array", "items": {"type": "integer"}}
+          }
+        ]
+      }
+    },
+    "/shared/{id}": {
+      "parameters": [
+        {"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}},
+        {"name": "verbose", "in": "query", "schema": {"type": "boolean"}}
+      ],
+      "get": {},
+      "put": {
+        "parameters": [
+          {"name": "verbose", "in": "query", "schema": {"type": "string", "enum": ["yes"]}}
+        ]
+      }
+    },
+    "/secured": {
+      "get": {
+        "parameters": [
+          {"name": "Authorization", "in": "header", "required": true, "schema": {"type": "string"}},
+          {"name": "session", "in": "cookie", "required": true, "schema": {"type": "string"}}
+        ]
+      }
+    },
+    "/search": {
+      "query": {
+        "parameters": [{"name": "limit", "in": "query", "schema": {"type": "integer"}}]
+      },
+      "trace": {}
+    },
+    "/raw": {
+      "get": {
+        "parameters": [
+          {
+            "name": "q",
+            "in": "querystring",
+            "required": true,
+            "content": {"application/x-www-form-urlencoded": {"schema": {"type": "object"}}}
+          }
+        ]
+      }
+    }
+  }
+}

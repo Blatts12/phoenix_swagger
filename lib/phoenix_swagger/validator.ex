@@ -11,7 +11,7 @@ defmodule PhoenixSwagger.Validator do
   on a connection.
   """
 
-  @http_methods ~w(get put post delete options head patch)
+  @http_methods ~w(get put post delete options head patch trace query)
   @state_key {__MODULE__, :default}
   @supported_openapi_version ~r/^3\.[12]\.\d+/
   @form_media_types ["application/x-www-form-urlencoded", "multipart/form-data"]
@@ -243,7 +243,9 @@ defmodule PhoenixSwagger.Validator do
     for {path, path_item} <- document["paths"] || %{},
         {method, operation} <- path_item,
         method in @http_methods do
-      parameters = Enum.map(operation["parameters"] || [], &resolve_reference(&1, components))
+      parameters =
+        merge_path_item_parameters(path_item["parameters"], operation["parameters"], components)
+
       request_body = resolve_reference(operation["requestBody"], components)
       {body_schema, form_schema} = pick_request_body_schemas(request_body, components)
 
@@ -254,6 +256,16 @@ defmodule PhoenixSwagger.Validator do
          base_path: base_path
        }}
     end
+  end
+
+  # Path Item parameters apply to every operation. An operation parameter with
+  # the same name and location replaces one from the Path Item.
+  defp merge_path_item_parameters(path_item_parameters, operation_parameters, components) do
+    ((path_item_parameters || []) ++ (operation_parameters || []))
+    |> Enum.map(&resolve_reference(&1, components))
+    |> Enum.reverse()
+    |> Enum.uniq_by(&{&1["name"], &1["in"]})
+    |> Enum.reverse()
   end
 
   # Components may hold Parameter and Request Body Objects referenced by `$ref`.
@@ -333,10 +345,18 @@ defmodule PhoenixSwagger.Validator do
   end
 
   defp parameter_descriptors(parameters) do
-    for parameter <- parameters, parameter["in"] in ["query", "path", "header"] do
+    for parameter <- parameters,
+        parameter["in"] in ["query", "path", "header"],
+        not ignored_header_parameter?(parameter) do
       build_descriptor(parameter["name"], parameter["in"], parameter["schema"] || %{}, parameter)
     end
   end
+
+  # The spec says header parameters with these names "SHALL be ignored".
+  defp ignored_header_parameter?(%{"in" => "header", "name" => name}),
+    do: String.downcase(name) in ["accept", "content-type", "authorization"]
+
+  defp ignored_header_parameter?(_parameter), do: false
 
   defp form_descriptors(nil), do: []
 
