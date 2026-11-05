@@ -1,6 +1,7 @@
 # Swagger UI
 
 PhoenixSwagger includes a plug with all static assets required to host swagger-ui from your Phoenix application.
+The bundled swagger-ui is version 5.34.1, which reads OpenAPI 3.2 documents.
 
 Usage:
 

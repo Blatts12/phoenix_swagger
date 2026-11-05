@@ -1,7 +1,8 @@
 # Schemas
 
 Schema definitions are placed in a `swagger_definitions/0` function within each controller module.
-This function should return a map in the format of a swagger [definitionsObject](http://swagger.io/specification/#definitionsObject).
+The generator merges these maps into `components.schemas` of the [OpenAPI document](https://spec.openapis.org/oas/v3.2.0.html#components-object), so `Schema.ref(:User)` points at `#/components/schemas/User`.
+Schema names may only use letters, digits, `.`, `-` and `_`, as the spec requires.
 
 The `swagger_schema/2` macro can be used to build a schema definition using the functions provided by the `PhoenixSwagger.Schema` module.
 
@@ -39,3 +40,10 @@ def swagger_definitions do
   }
 end
 ```
+
+Schemas render as JSON Schema 2020-12, the dialect OpenAPI 3.2 uses. A few DSL options change shape on the way out:
+
+* `nullable: true` adds `"null"` to `type`. On a `$ref` it wraps the reference in `anyOf` with `{"type": "null"}`.
+* `exclusive_maximum(true)` turns the `maximum` value into a numeric `exclusiveMaximum`. You can also pass the number directly.
+* A list given to `items` becomes `prefixItems`.
+* `discriminator(:pet_type)` becomes `{"propertyName": "pet_type"}`.

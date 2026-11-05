@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### Breaking: OpenAPI 3.2
+
+  * Generate OpenAPI 3.2.0 documents instead of Swagger 2.0. The DSL keeps its names.
+  * Write `openapi`, `servers` and `components.schemas` instead of `swagger`,
+    `host`, `basePath`, `schemes` and `definitions`. `Schema.ref/1` points at
+    `#/components/schemas/<Name>`.
+  * Turn `:body` and `:formData` parameters into a `requestBody`, and response
+    schemas into `content` keyed by the `consumes` and `produces` media types.
+  * Move parameter types and constraints into `schema`, and map
+    `collectionFormat` to `style` and `explode`. `tsv` raises.
+  * Render schemas as JSON Schema 2020-12. `nullable` adds `"null"` to `type`
+    instead of writing `x-nullable`. Boolean `exclusiveMaximum` and
+    `exclusiveMinimum` become numbers. Tuple `items` become `prefixItems`.
+    `discriminator` becomes a Discriminator Object.
+  * Raise an `ArgumentError` when `swagger_info/0` returns a Swagger 2.0 key, or
+    when a schema name breaks the component key pattern.
+  * Validate with `jsv` instead of `ex_json_schema`. JSON Schema error messages
+    change, for example `value is not of type integer`. `format` is no longer
+    checked, since 2020-12 treats it as an annotation.
+  * Validate OpenAPI 3.1 and 3.2 documents only. Swagger 2.0 files raise.
+  * Read the base path from the first `servers` URL, apply Path Item parameters,
+    split arrays by `style`, read repeated query keys, and match `query` and
+    `trace` operations. Ignore `Accept`, `Content-Type` and `Authorization`
+    header parameters, as the spec requires.
+  * `PhoenixSwagger.SchemaTest` validates against `#/components/schemas/<Name>`.
+  * Bundle swagger-ui 5.34.1, which reads OpenAPI 3.2.
+
+### Fixes
+
   * Resolve the Swagger spec once at boot and store fragments, query descriptors,
     and a path trie in `:persistent_term` instead of duplicating definitions into
     every operation and scanning `:validator_table` on each request.

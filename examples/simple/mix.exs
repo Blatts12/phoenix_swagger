@@ -41,7 +41,7 @@ defmodule Simple.MixProject do
       {:telemetry_poller, "~> 0.4"},
       {:jason, "~> 1.0"},
       {:plug_cowboy, "~> 2.0"},
-      {:ex_json_schema, "~> 0.7"},
+      {:jsv, "~> 0.27"},
       {:phoenix_swagger, path: "../../"}
     ]
   end

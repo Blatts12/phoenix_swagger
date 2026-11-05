@@ -2,7 +2,7 @@ defmodule PhoenixSwagger.Mixfile do
   use Mix.Project
 
   @source_url "https://github.com/Blatts12/phoenix_swagger"
-  @version "0.8.5"
+  @version "0.9.0"
 
   def project do
     [
@@ -54,7 +54,7 @@ defmodule PhoenixSwagger.Mixfile do
   defp package do
     [
       description:
-        "PhoenixSwagger is the library that provides swagger " <>
+        "PhoenixSwagger is the library that provides OpenAPI 3.2 " <>
           "integration to the phoenix web framework.",
       maintainers: ["Alexander Kuleshov", "Jakub Melkowski"],
       licenses: ["MPL-2.0"],

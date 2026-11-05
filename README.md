@@ -7,10 +7,10 @@
 [![License](https://img.shields.io/hexpm/l/phoenix_swagger.svg)](https://github.com/xerions/phoenix_swagger/blob/master/LICENSE)
 [![Last Updated](https://img.shields.io/github/last-commit/xerions/phoenix_swagger.svg)](https://github.com/xerions/phoenix_swagger/commits/master)
 
-`PhoenixSwagger` is the library that provides [swagger](http://swagger.io/) integration
-to the [phoenix](http://www.phoenixframework.org/) web framework.
+`PhoenixSwagger` is the library that provides [OpenAPI](https://spec.openapis.org/oas/v3.2.0.html) 3.2
+integration to the [phoenix](http://www.phoenixframework.org/) web framework.
 
- - Generate a swagger api specification from phoenix router and controllers
+ - Generate an OpenAPI 3.2 document from phoenix router and controllers
  - Serve [swagger-ui](https://swagger.io/swagger-ui/)
  - Validate requests against parameter schemas
  - Validate responses against schemas in tests

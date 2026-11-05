@@ -1,8 +1,7 @@
 # Getting Started
 
-`PhoenixSwagger` provides a mix compiler and mix task `phx.swagger.generate` for the swagger-ui `json`
-file generation that contains swagger specification that describes API of the `phoenix`
-application.
+`PhoenixSwagger` provides a mix compiler and mix task `phx.swagger.generate` that write an
+OpenAPI 3.2 `json` document describing the API of your `phoenix` application.
 
 You just need to add the swagger DSL to your controllers and then run this one mix task
 to generate the JSON files.
@@ -15,13 +14,13 @@ dependencies in the `mix.exs` file:
 ```elixir
 def deps do
   [
-    {:phoenix_swagger, "~> 0.8"},
-    {:ex_json_schema, "~> 0.5"} # optional
+    {:phoenix_swagger, "~> 0.9"},
+    {:jsv, "~> 0.27"} # optional
   ]
 end
 ```
 
-`ex_json_schema` is an optional dependency of `phoenix_swagger` required only for schema validation plug and test helper.
+`jsv` is an optional dependency of `phoenix_swagger`. You only need it for the validation plug and the test helper.
 
 Append `:phoenix_swagger` to the list of compilers to automatically update the swagger files each time the app is compiled:
 
@@ -45,7 +44,7 @@ config :my_app, :phoenix_swagger,
   swagger_files: %{
     "priv/static/swagger.json" => [
       router: MyAppWeb.Router,     # phoenix routes will be converted to swagger paths
-      endpoint: MyAppWeb.Endpoint  # (optional) endpoint config used to set host, port and https schemes.
+      endpoint: MyAppWeb.Endpoint  # (optional) endpoint config used to build the servers list
     ]
   }
 ```
@@ -99,28 +98,33 @@ The `version` and `title` are mandatory fields. By default the `version` will be
 and the `title` will be `<enter your title>` if you do not provide `swagger_info/0`
 function.
 
-See the [Swagger Object specification](https://github.com/OAI/OpenAPI-Specification/blob/master/versions/2.0.md#swagger-object) for details
-of other information that can be included. `basePath` is optional but may need to be specified if your API routes do not reside at the root location `/`. You can also set the description of `tags` here, for example:
+See the [OpenAPI Object specification](https://spec.openapis.org/oas/v3.2.0.html#openapi-object) for the other fields you can include.
+Set `servers` if your API routes do not live at the root location `/`. You can also describe your `tags` and add `components` such as `securitySchemes` here:
 
 ```elixir
 %{
-  basePath: "/api",
+  servers: [%{url: "/api"}],
   info: %{..},
-  tags: [%{name: "Users", description: "Operations about Users"}]
+  tags: [%{name: "Users", description: "Operations about Users"}],
+  components: %{securitySchemes: %{bearer: %{type: "http", scheme: "bearer"}}}
 }
 ```
 
+A word of caution when you upgrade from Swagger 2.0. Keys like `basePath`, `host`, `schemes` or `securityDefinitions` raise an `ArgumentError` that names their OpenAPI 3.2 replacement.
+
 ## Endpoint
 
-The swagger `host` value is built from your phoenix `Endpoint` `url` config.
+The `servers` list is built from your phoenix `Endpoint` `url` config, unless `swagger_info/0` already sets `servers`.
 
 ```elixir
 # config.exs
 config :my_app, MyApp.Web.Endpoint,
-  url: [host: "localhost"], # "host": "localhost:4000" in generated swagger
+  url: [host: "localhost"], # "servers": [{"url": "//localhost:4000"}] in the generated file
 ```
 
-If the `host` is configured to be set dynamically (either by `{:systems, "VAR"}` tuples or the `:load_from_system_env` flag), the swagger host will be omitted. SwaggerUI will default to sending requests to the same host that is serving the swagger file.
+The URL has no scheme, so clients use the scheme the document was served with. A `scheme` in the `url` config, or an `https` config, adds the scheme to the URL.
+
+If the `host` is configured to be set dynamically (either by `{:systems, "VAR"}` tuples or the `:load_from_system_env` flag), `servers` is omitted. SwaggerUI then sends requests to the same host that serves the document.
 
 ```elixir
 # prod.exs
@@ -129,10 +133,10 @@ config :my_app, MyApp.Web.Endpoint,
   url: [host: "example.com", port: 80],
 ```
 
-## Generate Swagger File
+## Generate the OpenAPI file
 
 Once you have a minimal configuration and `swagger_info` function in the router, run the `phx.swagger.generate`
-mix task for the `swagger` JSON file generation into directory with `phoenix` application:
+mix task to write the JSON file:
 
 ```
 mix phx.swagger.generate

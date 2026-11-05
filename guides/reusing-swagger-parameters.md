@@ -8,7 +8,7 @@ For example, let's say we've got two endpoints:
 - `GET /projects`
 - `GET /books`
 
-Both of these endpoints can be sorted using by `sort_by` and `sort_direction` parameters and both require an Authorization header.
+Both of these endpoints can be sorted using by `sort_by` and `sort_direction` parameters and both require a bearer token.
 
 Here's what the swagger spec in our `ProjectsController` would look like:
 
@@ -19,7 +19,7 @@ defmodule ProjectsController do
   swagger_path :index do
     get "/projects"
     produces "application/json"
-    parameter("Authorization", :header, :string, "OAuth2 access token", required: true)
+    security([%{bearer: []}])
     parameters do      
       sort_by :query, :string, "The property to sort by"
       sort_direction :query, :string, "The sort direction", enum: [:asc, :desc], default: :asc
@@ -29,7 +29,18 @@ defmodule ProjectsController do
 end
 ```
 
-Our BooksController swagger would look very similar, also defining the `Authorization` header and the `sort_by` and `sort_direction` headers.
+Our BooksController swagger would look very similar, also requiring the token and defining the `sort_by` and `sort_direction` parameters.
+
+Why not an `Authorization` header parameter? OpenAPI 3.2 says header parameters named `Authorization`, `Accept` or `Content-Type` "SHALL be ignored", and the validator skips them. Describe the token with a security scheme instead, declared once in `swagger_info/0`:
+
+```elixir
+def swagger_info do
+  %{
+    info: %{version: "1.0", title: "My App"},
+    components: %{securitySchemes: %{bearer: %{type: "http", scheme: "bearer"}}}
+  }
+end
+```
 
 ## Extracting parameters into a module for reuse
 
@@ -45,7 +56,7 @@ defmodule CommonParameters do
   import PhoenixSwagger.Path
 
   def authorization(path = %PathObject{}) do
-    path |> parameter("Authorization", :header, :string, "OAuth2 access token", required: true)
+    path |> security([%{bearer: []}])
   end
 
   def sorting(path = %PathObject{}) do

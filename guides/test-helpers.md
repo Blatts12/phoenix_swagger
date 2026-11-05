@@ -25,7 +25,7 @@ defmodule YourApp.UserControllerTest do
 ```
 
 Then in each test, the context will contain the swagger_schema, which can be used with
-the `validate_resp_schema` function:
+the `validate_resp_schema` function. The name you pass is looked up in `#/components/schemas`:
 
 ```elixir
 test "shows chosen resource", %{conn: conn, swagger_schema: schema} do

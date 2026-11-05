@@ -3,7 +3,7 @@ defmodule PhoenixSwagger.Schema do
   Struct and helpers for OpenAPI Schema Objects.
 
   Fields follow the OpenAPI 3.2 Schema Object, which is a superset of JSON Schema 2020-12.
-  `PhoenixSwagger.to_json/1` renders the struct in that dialect.
+  Schemas render in that dialect when the document is generated.
 
   See https://spec.openapis.org/oas/v3.2.0.html#schema-object
   """
