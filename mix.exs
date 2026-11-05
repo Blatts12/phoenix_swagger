@@ -19,7 +19,9 @@ defmodule PhoenixSwagger.Mixfile do
       xref: [
         exclude: [
           ExJsonSchema.Schema,
-          ExJsonSchema.Validator
+          ExJsonSchema.Validator,
+          JSV,
+          JSV.Ref
         ]
       ]
     ]

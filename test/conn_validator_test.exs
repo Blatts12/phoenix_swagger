@@ -8,37 +8,61 @@ defmodule PhoenixSwagger.ConnValidatorTest do
     on_exit(&Validator.clear/0)
   end
 
-  describe "basePath" do
-    test "matches requests when basePath is the root" do
-      parse_spec!(%{"basePath" => "/", "paths" => %{"/pets" => %{"get" => %{}}}})
+  describe "servers base path" do
+    test "matches requests when there are no servers" do
+      parse_spec!(%{"paths" => %{"/pets" => %{"get" => %{}}}})
 
       assert {:ok, _} = ConnValidator.validate(build_conn(:get, "/pets"))
     end
 
-    test "matches requests when basePath has a trailing slash" do
-      parse_spec!(%{"basePath" => "/api/", "paths" => %{"/pets/" => %{"get" => %{}}}})
+    test "matches requests when the server url has a trailing slash" do
+      parse_spec!(%{
+        "servers" => [%{"url" => "/api/"}],
+        "paths" => %{"/pets/" => %{"get" => %{}}}
+      })
 
       assert {:ok, _} = ConnValidator.validate(build_conn(:get, "/api/pets"))
     end
+
+    test "uses the path of an absolute server url" do
+      parse_spec!(%{
+        "servers" => [%{"url" => "https://api.example.com/v1"}],
+        "paths" => %{"/pets" => %{"get" => %{}}}
+      })
+
+      assert {:ok, _} = ConnValidator.validate(build_conn(:get, "/v1/pets"))
+      assert {:error, :no_matching_path} = ConnValidator.validate(build_conn(:get, "/pets"))
+    end
+
+    test "substitutes server variable defaults" do
+      parse_spec!(%{
+        "servers" => [
+          %{"url" => "/api/{version}", "variables" => %{"version" => %{"default" => "v2"}}}
+        ],
+        "paths" => %{"/pets" => %{"get" => %{}}}
+      })
+
+      assert {:ok, _} = ConnValidator.validate(build_conn(:get, "/api/v2/pets"))
+    end
   end
 
-  describe "body parameters" do
+  describe "JSON request bodies" do
     test "accept an inline schema without $ref" do
       parse_spec!(%{
         "paths" => %{
           "/pets" => %{
             "post" => %{
-              "parameters" => [
-                %{
-                  "name" => "pet",
-                  "in" => "body",
-                  "schema" => %{
-                    "type" => "object",
-                    "required" => ["name"],
-                    "properties" => %{"name" => %{"type" => "string"}}
+              "requestBody" => %{
+                "content" => %{
+                  "application/json" => %{
+                    "schema" => %{
+                      "type" => "object",
+                      "required" => ["name"],
+                      "properties" => %{"name" => %{"type" => "string"}}
+                    }
                   }
                 }
-              ]
+              }
             }
           }
         }
@@ -46,22 +70,32 @@ defmodule PhoenixSwagger.ConnValidatorTest do
 
       assert {:ok, _} = ConnValidator.validate(build_conn(:post, "/pets", %{"name" => "Rex"}))
 
-      assert {:error, "Required property name was not present.", "#"} =
-               ConnValidator.validate(build_conn(:post, "/pets", %{}))
+      assert {:error, message, "#"} = ConnValidator.validate(build_conn(:post, "/pets", %{}))
+      assert message =~ ~r/'name' is required/
     end
   end
 
-  describe "formData parameters" do
+  describe "multipart form bodies" do
     setup do
       parse_spec!(%{
         "paths" => %{
           "/uploads" => %{
             "post" => %{
-              "parameters" => [
-                %{"name" => "document", "in" => "formData", "type" => "file", "required" => true},
-                %{"name" => "age", "in" => "formData", "type" => "integer"},
-                %{"name" => "public", "in" => "formData", "type" => "boolean"}
-              ]
+              "requestBody" => %{
+                "content" => %{
+                  "multipart/form-data" => %{
+                    "schema" => %{
+                      "type" => "object",
+                      "required" => ["document"],
+                      "properties" => %{
+                        "document" => %{"contentMediaType" => "application/octet-stream"},
+                        "age" => %{"type" => "integer"},
+                        "public" => %{"type" => "boolean"}
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         }
@@ -88,6 +122,45 @@ defmodule PhoenixSwagger.ConnValidatorTest do
     end
   end
 
+  describe "urlencoded form bodies" do
+    setup do
+      parse_spec!(%{
+        "paths" => %{
+          "/people" => %{
+            "post" => %{
+              "requestBody" => %{
+                "content" => %{
+                  "application/x-www-form-urlencoded" => %{
+                    "schema" => %{
+                      "type" => "object",
+                      "properties" => %{"age" => %{"type" => "integer", "minimum" => 0}}
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      })
+    end
+
+    test "parse an integer field before checking it" do
+      assert {:ok, _} = ConnValidator.validate(build_conn(:post, "/people", %{"age" => "42"}))
+    end
+
+    test "reject an integer field that does not parse" do
+      assert {:error, "Type mismatch. Expected Integer but got something else.", "#/age"} =
+               ConnValidator.validate(build_conn(:post, "/people", %{"age" => "old"}))
+    end
+
+    test "check constraints on the parsed value" do
+      assert {:error, message, "#/age"} =
+               ConnValidator.validate(build_conn(:post, "/people", %{"age" => "-1"}))
+
+      assert message =~ ~r/0/
+    end
+  end
+
   describe "header parameters" do
     setup do
       parse_spec!(%{
@@ -98,7 +171,7 @@ defmodule PhoenixSwagger.ConnValidatorTest do
                 %{
                   "name" => "X-Request-Id",
                   "in" => "header",
-                  "type" => "integer",
+                  "schema" => %{"type" => "integer"},
                   "required" => true
                 }
               ]
@@ -137,9 +210,9 @@ defmodule PhoenixSwagger.ConnValidatorTest do
                 %{
                   "name" => "uuids",
                   "in" => "query",
-                  "type" => "array",
-                  "items" => %{"type" => "string"},
-                  "collectionFormat" => "csv"
+                  "style" => "form",
+                  "explode" => false,
+                  "schema" => %{"type" => "array", "items" => %{"type" => "string"}}
                 }
               ]
             }
@@ -171,18 +244,23 @@ defmodule PhoenixSwagger.ConnValidatorTest do
                 %{
                   "name" => "limit",
                   "in" => "query",
-                  "type" => "integer",
-                  "minimum" => 1,
-                  "maximum" => 50
+                  "schema" => %{"type" => "integer", "minimum" => 1, "maximum" => 50}
                 },
                 %{
                   "name" => "code",
                   "in" => "query",
-                  "type" => "string",
-                  "pattern" => "^[A-Z]{3}$"
+                  "schema" => %{"type" => "string", "pattern" => "^[A-Z]{3}$"}
                 },
-                %{"name" => "level", "in" => "query", "type" => "integer", "enum" => [1, 2]},
-                %{"name" => "since", "in" => "query", "type" => "integer", "format" => "int64"}
+                %{
+                  "name" => "level",
+                  "in" => "query",
+                  "schema" => %{"type" => "integer", "enum" => [1, 2]}
+                },
+                %{
+                  "name" => "since",
+                  "in" => "query",
+                  "schema" => %{"type" => "integer", "format" => "int64"}
+                }
               ]
             }
           }
@@ -196,18 +274,22 @@ defmodule PhoenixSwagger.ConnValidatorTest do
     end
 
     test "apply to typed params passed to Validator.validate/2" do
-      assert {:error, "Expected the value to be <= 50", "#/limit"} =
-               Validator.validate("/get/pets", %{"limit" => 51})
+      assert {:error, message, "#/limit"} = Validator.validate("/get/pets", %{"limit" => 51})
+      assert message =~ ~r/50/
     end
 
     test "reject a value above maximum" do
-      assert {:error, "Expected the value to be <= 50", "#/limit"} =
+      assert {:error, message, "#/limit"} =
                ConnValidator.validate(build_conn(:get, "/pets?limit=51"))
+
+      assert message =~ ~r/50/
     end
 
     test "reject a value that misses the pattern" do
-      assert {:error, ~s(Does not match pattern "^[A-Z]{3}$".), "#/code"} =
+      assert {:error, message, "#/code"} =
                ConnValidator.validate(build_conn(:get, "/pets?code=abc"))
+
+      assert message =~ ~r/pattern/
     end
 
     test "compare integer enums against the parsed value" do
@@ -223,7 +305,13 @@ defmodule PhoenixSwagger.ConnValidatorTest do
         "phoenix_swagger_conn_#{System.unique_integer([:positive])}.json"
       )
 
-    File.write!(path, Jason.encode!(Map.put(spec, "swagger", "2.0")))
+    spec =
+      Map.merge(
+        %{"openapi" => "3.2.0", "info" => %{"title" => "Test", "version" => "1.0.0"}},
+        spec
+      )
+
+    File.write!(path, Jason.encode!(spec))
     on_exit(fn -> File.rm(path) end)
     Validator.parse_swagger_schema(path)
   end

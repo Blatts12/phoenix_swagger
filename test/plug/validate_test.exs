@@ -12,7 +12,7 @@ defmodule PhoenixSwagger.Plug.ValidateTest do
                   pass: ["*/*"]
                 )
   setup do
-    Validator.parse_swagger_schema(["test/test_spec/swagger_jsonapi_test_spec.json"])
+    Validator.parse_swagger_schema(["test/test_spec/openapi_jsonapi_test_spec.json"])
 
     on_exit(&Validator.clear/0)
 

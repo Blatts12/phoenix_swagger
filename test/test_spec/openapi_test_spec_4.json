@@ -1,0 +1,71 @@
+{
+  "openapi": "3.2.0",
+  "info": {
+    "title": "swagger_test_spec_4.json",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "/typed"
+    }
+  ],
+  "paths": {
+    "/ping": {
+      "get": {
+        "summary": "No parameters",
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/search": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        },
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "score",
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "count",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "ids",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "style": "form",
+            "explode": false
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {}
+  }
+}

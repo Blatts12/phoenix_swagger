@@ -19,6 +19,13 @@ defmodule PhoenixSwagger.OpenApiConformanceTest do
     end
   end
 
+  for file <- Path.wildcard("test/test_spec/openapi_*.json") do
+    test "fixture #{Path.basename(file)} is a valid OpenAPI 3.2 document" do
+      document = unquote(file) |> File.read!() |> Jason.decode!()
+      assert :ok = assert_valid_openapi_document(document)
+    end
+  end
+
   test "JSV ignores OAS-only keywords" do
     assert {:ok, _root} =
              JSV.build(%{

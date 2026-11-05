@@ -6,8 +6,8 @@ defmodule ValidatorTest do
   setup do
     schema =
       Validator.parse_swagger_schema([
-        "test/test_spec/swagger_test_spec.json",
-        "test/test_spec/swagger_test_spec_2.json"
+        "test/test_spec/openapi_test_spec.json",
+        "test/test_spec/openapi_test_spec_2.json"
       ])
 
     on_exit(&Validator.clear/0)
@@ -56,7 +56,7 @@ defmodule ValidatorTest do
 
     assert %{
              "id" => %{"format" => "int64", "type" => "integer"},
-             "pet" => %{"$ref" => [:root, "definitions", "Pet"]}
+             "pet" => %{"$ref" => "#/components/schemas/Pet"}
            } = pets_post
 
     assert %{"id" => %{"type" => "integer"}} = pet_id
@@ -71,36 +71,45 @@ defmodule ValidatorTest do
     end
   end
 
-  test "formData file parameters validate as unconstrained objects" do
-    path =
-      Path.join(
-        System.tmp_dir!(),
-        "phoenix_swagger_file_#{System.unique_integer([:positive])}.json"
-      )
+  test "parse_swagger_schema/1 raises on a Swagger 2.0 document" do
+    path = write_spec!(%{"swagger" => "2.0", "info" => info(), "paths" => %{}})
 
-    File.write!(path, """
-    {
-      "swagger": "2.0",
-      "info": {"title": "Files", "version": "1.0.0"},
-      "paths": {
-        "/uploads": {
-          "post": {
-            "parameters": [
-              {"name": "document", "in": "formData", "type": "file", "required": true},
-              {"name": "title", "in": "formData", "type": "string"}
-            ]
+    assert_raise ArgumentError, ~r/OpenAPI 3\.1 or 3\.2/, fn ->
+      Validator.parse_swagger_schema(path)
+    end
+  end
+
+  test "multipart file properties accept uploads" do
+    path =
+      write_spec!(%{
+        "openapi" => "3.2.0",
+        "info" => info(),
+        "paths" => %{
+          "/uploads" => %{
+            "post" => %{
+              "requestBody" => %{
+                "content" => %{
+                  "multipart/form-data" => %{
+                    "schema" => %{
+                      "type" => "object",
+                      "required" => ["document"],
+                      "properties" => %{
+                        "document" => %{"contentMediaType" => "application/octet-stream"},
+                        "title" => %{"type" => "string"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
-      }
-    }
-    """)
-
-    on_exit(fn -> File.rm(path) end)
+      })
 
     schemas = Map.new(Validator.parse_swagger_schema(path))
     properties = schemas["/post/uploads"].schema["properties"]
 
-    assert %{"type" => "object"} = properties["document"]
+    assert %{"contentMediaType" => "application/octet-stream"} = properties["document"]
     assert %{"type" => "string"} = properties["title"]
 
     upload = %Plug.Upload{
@@ -112,8 +121,38 @@ defmodule ValidatorTest do
     assert :ok =
              Validator.validate("/post/uploads", %{"document" => upload, "title" => "Notes"})
 
-    assert {:error, "Type mismatch. Expected Object but got String.", "#/document"} =
-             Validator.validate("/post/uploads", %{"document" => "doc.pdf", "title" => "Notes"})
+    assert {:error, message, "#/title"} =
+             Validator.validate("/post/uploads", %{"document" => upload, "title" => 1})
+
+    assert message =~ ~r/string/
+  end
+
+  test "parameter schemas may reference components" do
+    path =
+      write_spec!(%{
+        "openapi" => "3.2.0",
+        "info" => info(),
+        "paths" => %{
+          "/paint" => %{
+            "get" => %{
+              "parameters" => [
+                %{
+                  "name" => "color",
+                  "in" => "query",
+                  "schema" => %{"$ref" => "#/components/schemas/Color"}
+                }
+              ]
+            }
+          }
+        },
+        "components" => %{"schemas" => %{"Color" => %{"type" => "string", "enum" => ["red"]}}}
+      })
+
+    Validator.parse_swagger_schema(path)
+
+    assert :ok = Validator.validate("/get/paint", %{"color" => "red"})
+    assert {:error, message, "#/color"} = Validator.validate("/get/paint", %{"color" => "blue"})
+    assert message =~ ~r/enum/
   end
 
   test "parse_swagger_schema/1 raises when the file is not valid JSON" do
@@ -127,11 +166,13 @@ defmodule ValidatorTest do
   end
 
   test "validate() test" do
-    assert {:error, "Type mismatch. Expected Integer but got String.", "#/limit"} =
-             Validator.validate("/get/history", %{"limit" => "10"})
+    assert {:error, message, "#/limit"} = Validator.validate("/get/history", %{"limit" => "10"})
+    assert message =~ ~r/integer/
 
-    assert {:error, "Type mismatch. Expected Integer but got String.", "#/offset"} =
+    assert {:error, message, "#/offset"} =
              Validator.validate("/get/history", %{"limit" => 10, "offset" => "100"})
+
+    assert message =~ ~r/integer/
 
     assert :ok = Validator.validate("/get/history", %{"limit" => 10, "offset" => 100})
     assert {:error, :resource_not_exists} = Validator.validate("/wrong_path", %{})
@@ -142,30 +183,37 @@ defmodule ValidatorTest do
                "start_longitude" => 20
              })
 
-    assert {:error, "Type mismatch. Expected Integer but got String.", "#/id"} =
-             Validator.validate("/get/pets/{id}", %{"id" => "1"})
+    assert {:error, message, "#/id"} = Validator.validate("/get/pets/{id}", %{"id" => "1"})
+    assert message =~ ~r/integer/
 
     assert {:error, :resource_not_exists} = Validator.validate("/get/pets/id", %{"id" => "1"})
     assert :ok = Validator.validate("/get/pets/{id}", %{"id" => 1})
     assert {:error, :resource_not_exists} = Validator.validate("/pets", %{"id" => 1})
 
-    assert {:error, "Required properties id, pet were not present.", "#"} =
-             Validator.validate("/post/pets", %{})
+    assert {:error, message, "#"} = Validator.validate("/post/pets", %{})
+    assert message =~ ~r/'id' and 'pet' are required/
 
-    assert {:error,
-            [
-              {"Type mismatch. Expected Integer but got String.", "#/id"},
-              {"Required property pet was not present.", "#"}
-            ], "/post/pets"} = Validator.validate("/post/pets", %{"id" => "wrong_id"})
+    assert {:error, errors, "/post/pets"} =
+             Validator.validate("/post/pets", %{"id" => "wrong_id"})
 
-    assert {:error, "Required property pet was not present.", "#"} =
-             Validator.validate("/post/pets", %{"id" => 1})
+    assert [{type_message, "#/id"}, {required_message, "#"}] =
+             Enum.sort_by(errors, &elem(&1, 1), :desc)
 
-    assert {:error, "Required properties name, tag were not present.", "#/pet"} =
+    assert type_message =~ ~r/integer/
+    assert required_message =~ ~r/'pet' is required/
+
+    assert {:error, message, "#"} = Validator.validate("/post/pets", %{"id" => 1})
+    assert message =~ ~r/'pet' is required/
+
+    assert {:error, message, "#/pet"} =
              Validator.validate("/post/pets", %{"id" => 1, "pet" => %{}})
 
-    assert {:error, "Required property tag was not present.", "#/pet"} =
+    assert message =~ ~r/'name' and 'tag' are required/
+
+    assert {:error, message, "#/pet"} =
              Validator.validate("/post/pets", %{"id" => 1, "pet" => %{"name" => "pet_name"}})
+
+    assert message =~ ~r/'tag' is required/
 
     assert :ok =
              Validator.validate("/post/pets", %{
@@ -194,5 +242,19 @@ defmodule ValidatorTest do
                "id" => 1,
                "pet" => %{"name" => "pet_name", "tag" => "pet_tag"}
              })
+  end
+
+  defp info, do: %{"title" => "Test", "version" => "1.0.0"}
+
+  defp write_spec!(spec) do
+    path =
+      Path.join(
+        System.tmp_dir!(),
+        "phoenix_swagger_spec_#{System.unique_integer([:positive])}.json"
+      )
+
+    File.write!(path, Jason.encode!(spec))
+    on_exit(fn -> File.rm(path) end)
+    path
   end
 end

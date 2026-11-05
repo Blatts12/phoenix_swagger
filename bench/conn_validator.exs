@@ -5,11 +5,11 @@
 alias PhoenixSwagger.{ConnValidator, Validator}
 
 specs = [
-  "test/test_spec/swagger_test_spec.json",
-  "test/test_spec/swagger_test_spec_2.json",
-  "test/test_spec/swagger_test_spec_3.json",
-  "test/test_spec/swagger_test_spec_4.json",
-  "test/test_spec/swagger_jsonapi_test_spec.json"
+  "test/test_spec/openapi_test_spec.json",
+  "test/test_spec/openapi_test_spec_2.json",
+  "test/test_spec/openapi_test_spec_3.json",
+  "test/test_spec/openapi_test_spec_4.json",
+  "test/test_spec/openapi_jsonapi_test_spec.json"
 ]
 
 Validator.parse_swagger_schema(specs)

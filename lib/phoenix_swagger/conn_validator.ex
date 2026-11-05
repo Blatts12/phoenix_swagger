@@ -19,30 +19,30 @@ defmodule PhoenixSwagger.ConnValidator do
   """
   def validate(conn) do
     with {:ok, path, operation, root} <- Validator.lookup_request(conn.method, conn.path_info),
-         :ok <- Validator.validate_params(root, operation.fragment, path, conn.body_params),
-         :ok <- validate_parameters(operation.parameters, conn) do
+         :ok <- Validator.validate_params(root, operation.body_key, path, conn.body_params),
+         :ok <- validate_parameters(operation.parameters, conn, root) do
       {:ok, conn}
     end
   end
 
-  defp validate_parameters([], _conn), do: :ok
+  defp validate_parameters([], _conn, _root), do: :ok
 
-  defp validate_parameters([parameter | parameters], conn) do
-    case validate_parameter(parameter, fetch_parameter_value(parameter, conn)) do
-      :ok -> validate_parameters(parameters, conn)
+  defp validate_parameters([parameter | parameters], conn, root) do
+    case validate_parameter(parameter, fetch_parameter_value(parameter, conn), root) do
+      :ok -> validate_parameters(parameters, conn, root)
       error -> error
     end
   end
 
-  defp validate_parameter(%{required: true, name: name}, nil) do
+  defp validate_parameter(%{required: true, name: name}, nil, _root) do
     {:error, "Required property #{name} was not present.", "#"}
   end
 
-  defp validate_parameter(_parameter, nil), do: :ok
+  defp validate_parameter(_parameter, nil, _root), do: :ok
 
-  defp validate_parameter(parameter, value) do
+  defp validate_parameter(parameter, value, root) do
     with {:ok, parsed} <- parse_parameter_value(parameter, value) do
-      check_parameter_constraints(parameter, parsed)
+      check_parameter_constraints(parameter, parsed, root)
     end
   end
 
@@ -136,10 +136,10 @@ defmodule PhoenixSwagger.ConnValidator do
     end
   end
 
-  defp check_parameter_constraints(%{constraints: nil}, _value), do: :ok
+  defp check_parameter_constraints(%{constraints_key: nil}, _value, _root), do: :ok
 
-  defp check_parameter_constraints(%{constraints: constraints, name: name}, value) do
-    case ExJsonSchema.Validator.validate(constraints, value) do
+  defp check_parameter_constraints(%{constraints_key: key, name: name}, value, root) do
+    case Validator.validate_value_against_key(root, key, value) do
       :ok -> :ok
       {:error, [{message, _path} | _]} -> {:error, message, "#/#{name}"}
     end
