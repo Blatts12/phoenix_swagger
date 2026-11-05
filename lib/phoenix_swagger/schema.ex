@@ -36,6 +36,8 @@ defmodule PhoenixSwagger.Schema do
     :type,
     :items,
     :allOf,
+    :oneOf,
+    :anyOf,
     :properties,
     :additionalProperties,
     :discriminator,
@@ -627,6 +629,55 @@ defmodule PhoenixSwagger.Schema do
   end
 
   @doc """
+  Requires a value to conform to exactly one of the given schemas.
+
+  Use it when a payload takes one of several shapes. Pair it with `discriminator`
+  so tools can tell the shapes apart without trying each one.
+
+  See https://spec.openapis.org/oas/v3.2.0.html#composition-and-inheritance-polymorphism
+
+  ## Examples
+
+      iex> alias PhoenixSwagger.Schema
+      ...> %Schema{}
+      ...> |> Schema.one_of([Schema.ref(:Card), Schema.ref(:BankAccount)])
+      %PhoenixSwagger.Schema{
+        oneOf: [
+          %PhoenixSwagger.Schema{"$ref": "#/components/schemas/Card"},
+          %PhoenixSwagger.Schema{"$ref": "#/components/schemas/BankAccount"}
+        ]
+      }
+
+  """
+  def one_of(model = %Schema{}, schemas) when is_list(schemas) do
+    %{model | oneOf: schemas}
+  end
+
+  @doc """
+  Requires a value to conform to at least one of the given schemas.
+
+  Unlike `one_of/2`, a value may match several of them.
+
+  See https://spec.openapis.org/oas/v3.2.0.html#composition-and-inheritance-polymorphism
+
+  ## Examples
+
+      iex> alias PhoenixSwagger.Schema
+      ...> %Schema{}
+      ...> |> Schema.any_of([%Schema{type: :string}, %Schema{type: :integer}])
+      %PhoenixSwagger.Schema{
+        anyOf: [
+          %PhoenixSwagger.Schema{type: :string},
+          %PhoenixSwagger.Schema{type: :integer}
+        ]
+      }
+
+  """
+  def any_of(model = %Schema{}, schemas) when is_list(schemas) do
+    %{model | anyOf: schemas}
+  end
+
+  @doc """
   Boolean indicating that additional properties are allowed, or
   a schema to be used for validating any additional properties not listed in `properties`.
 
@@ -781,8 +832,9 @@ defmodule PhoenixSwagger.Schema do
   Allows `null` as a value of the schema.
 
   JSON Schema 2020-12 has no `nullable` keyword. When rendered, a typed schema gets
-  `"null"` added to its `type` (and `nil` to its `enum`), and a `$ref` is wrapped
-  in `anyOf` with `{"type": "null"}`.
+  `"null"` added to its `type` (and `nil` to its `enum`). A `$ref`, or a schema built
+  with `all_of/2`, `one_of/2` or `any_of/2`, is wrapped in `anyOf` with `{"type": "null"}`.
+  `title`, `description`, `example` and `default` stay outside the wrapper.
 
   ## Examples
 
@@ -806,35 +858,45 @@ defmodule PhoenixSwagger.Schema do
   def to_json_schema_2020_12(%Schema{} = schema) do
     schema
     |> Map.from_struct()
-    |> apply_nullable()
     |> move_exclusive_bound(:exclusiveMaximum, :maximum)
     |> move_exclusive_bound(:exclusiveMinimum, :minimum)
     |> move_tuple_items_to_prefix_items()
     |> wrap_discriminator_property_name()
+    |> apply_nullable()
   end
 
-  defp apply_nullable(%{nullable: true, type: type} = schema) when not is_nil(type) do
-    %{schema | nullable: nil, type: add_null_type(type), enum: add_null_enum_value(schema.enum)}
+  defp apply_nullable(%{nullable: true} = schema) do
+    schema = %{schema | nullable: nil}
+
+    cond do
+      composed_schema?(schema) or is_binary(schema."$ref") ->
+        wrap_with_null_branch(schema)
+
+      not is_nil(schema.type) ->
+        %{schema | type: add_null_type(schema.type), enum: add_null_enum_value(schema.enum)}
+
+      is_list(schema.enum) ->
+        %{schema | enum: add_null_enum_value(schema.enum)}
+
+      # Without a type, ref, composition or enum the schema already accepts null.
+      true ->
+        schema
+    end
   end
 
-  defp apply_nullable(%{nullable: true, "$ref": ref} = schema) when is_binary(ref) do
-    schema
-    |> Map.merge(%{nullable: nil, "$ref": nil})
-    |> Map.put(:anyOf, [%Schema{"$ref": ref}, %Schema{type: :null}])
-  end
-
-  defp apply_nullable(%{nullable: true, allOf: all_of} = schema) when is_list(all_of) do
-    schema
-    |> Map.merge(%{nullable: nil, allOf: nil})
-    |> Map.put(:anyOf, [%Schema{allOf: all_of}, %Schema{type: :null}])
-  end
-
-  defp apply_nullable(%{nullable: true, enum: values} = schema) when is_list(values) do
-    %{schema | nullable: nil, enum: add_null_enum_value(values)}
-  end
-
-  # Without a type, ref, composition or enum the schema already accepts null.
   defp apply_nullable(schema), do: %{schema | nullable: nil}
+
+  defp composed_schema?(schema) do
+    Enum.any?([:allOf, :oneOf, :anyOf], &is_list(Map.fetch!(schema, &1)))
+  end
+
+  # Adding "null" to `type` is not enough when `$ref` or a composition keyword
+  # still rejects null. The checks move into an `anyOf` branch beside
+  # `{"type": "null"}`, and annotations stay on the outer schema.
+  defp wrap_with_null_branch(schema) do
+    {annotations, checks} = Map.split(schema, [:title, :description, :example, :default])
+    Map.put(annotations, :anyOf, [checks, %{type: :null}])
+  end
 
   defp add_null_type(types) when is_list(types) do
     if Enum.any?(types, &(&1 in [:null, "null"])), do: types, else: types ++ [:null]

@@ -48,6 +48,13 @@ defmodule PhoenixSwagger.SampleApi do
       response(204, "Uploaded")
     end
 
+    swagger_path :pay do
+      post("/api/pets/{id}/payments")
+      parameter(:id, :path, :integer, "Pet id")
+      parameter(:payment, :body, Schema.ref(:Payment), "Payment", required: true)
+      response(201, "Paid")
+    end
+
     swagger_path :delete do
       delete("/api/pets/{id}")
       parameter(:id, :path, :integer, "Pet id")
@@ -86,6 +93,26 @@ defmodule PhoenixSwagger.SampleApi do
               name(:string, "Owner name")
             end
           end,
+        Payment:
+          swagger_schema do
+            title("Payment")
+            one_of([Schema.ref(:Card), Schema.ref(:BankAccount)])
+            discriminator(:method)
+          end,
+        Card:
+          swagger_schema do
+            properties do
+              method(:string, "Payment method", required: true, enum: [:Card])
+              number(:string, "Card number", required: true)
+            end
+          end,
+        BankAccount:
+          swagger_schema do
+            properties do
+              method(:string, "Payment method", required: true, enum: [:BankAccount])
+              iban(:string, "IBAN", required: true)
+            end
+          end,
         Error:
           swagger_schema do
             properties do
@@ -105,6 +132,7 @@ defmodule PhoenixSwagger.SampleApi do
             {:get, "/api/pets/:id", :show},
             {:post, "/api/pets", :create},
             {:post, "/api/pets/:id/photo", :upload_photo},
+            {:post, "/api/pets/:id/payments", :pay},
             {:delete, "/api/pets/:id", :delete}
           ] do
         %{plug: PetController, plug_opts: action, path: path, verb: verb}

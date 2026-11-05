@@ -155,6 +155,49 @@ defmodule ValidatorTest do
     assert message =~ ~r/enum/
   end
 
+  test "oneOf request bodies accept exactly one matching schema" do
+    path =
+      write_spec!(%{
+        "openapi" => "3.2.0",
+        "info" => info(),
+        "paths" => %{
+          "/contacts" => %{
+            "post" => %{
+              "requestBody" => %{
+                "content" => %{
+                  "application/json" => %{
+                    "schema" => %{
+                      "oneOf" => [
+                        %{"$ref" => "#/components/schemas/Email"},
+                        %{"$ref" => "#/components/schemas/Phone"}
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "components" => %{
+          "schemas" => %{
+            "Email" => %{"type" => "object", "required" => ["email"]},
+            "Phone" => %{"type" => "object", "required" => ["phone"]}
+          }
+        }
+      })
+
+    Validator.parse_swagger_schema(path)
+
+    assert :ok = Validator.validate("/post/contacts", %{"email" => "joe@example.com"})
+    assert {:error, none, "#"} = Validator.validate("/post/contacts", %{"name" => "Joe"})
+    assert none =~ ~r/one/
+
+    assert {:error, both, "#"} =
+             Validator.validate("/post/contacts", %{"email" => "joe@example.com", "phone" => "1"})
+
+    assert both =~ ~r/one/
+  end
+
   test "parse_swagger_schema/1 raises when the file is not valid JSON" do
     path = Path.join(System.tmp_dir!(), "phoenix_swagger_invalid_#{System.unique_integer()}.json")
     File.write!(path, "{not json")

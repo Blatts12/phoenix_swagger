@@ -78,6 +78,44 @@ defmodule PhoenixSwagger.SchemaToJsonTest do
            }
   end
 
+  test "one_of and any_of render their keywords" do
+    one_of = Schema.one_of(%Schema{}, [Schema.ref(:Card), Schema.ref(:BankAccount)])
+    any_of = Schema.any_of(%Schema{}, [%Schema{type: :string}, %Schema{type: :integer}])
+
+    assert to_json(one_of) == %{
+             "oneOf" => [
+               %{"$ref" => "#/components/schemas/Card"},
+               %{"$ref" => "#/components/schemas/BankAccount"}
+             ]
+           }
+
+    assert to_json(any_of) == %{"anyOf" => [%{"type" => "string"}, %{"type" => "integer"}]}
+  end
+
+  test "nullable typed composition keeps type and discriminator inside the non-null branch" do
+    schema =
+      %Schema{type: :object, title: "Payment"}
+      |> Schema.one_of([Schema.ref(:Card), Schema.ref(:BankAccount)])
+      |> Schema.discriminator(:method)
+      |> Schema.nullable(true)
+
+    assert to_json(schema) == %{
+             "title" => "Payment",
+             "anyOf" => [
+               %{
+                 "type" => "object",
+                 "oneOf" => [
+                   %{"$ref" => "#/components/schemas/Card"},
+                   %{"$ref" => "#/components/schemas/BankAccount"}
+                 ],
+                 "discriminator" => %{"propertyName" => "method"},
+                 "required" => ["method"]
+               },
+               %{"type" => "null"}
+             ]
+           }
+  end
+
   test "nullable untyped enum accepts null" do
     assert to_json(Schema.nullable(%Schema{enum: [:a]}, true)) == %{"enum" => ["a", nil]}
   end
