@@ -43,7 +43,9 @@ end
 
 Schemas render as JSON Schema 2020-12, the dialect OpenAPI 3.2 uses. A few DSL options change shape on the way out:
 
-* `nullable: true` adds `"null"` to `type`. On a `$ref` it wraps the reference in `anyOf` with `{"type": "null"}`.
+* `nullable: true` adds `"null"` to `type`. On a `$ref` or a composed schema it wraps the checks in `anyOf` with `{"type": "null"}`.
 * `exclusive_maximum(true)` turns the `maximum` value into a numeric `exclusiveMaximum`. You can also pass the number directly.
 * A list given to `items` becomes `prefixItems`.
 * `discriminator(:pet_type)` becomes `{"propertyName": "pet_type"}`.
+
+To combine schemas with `all_of/2`, `one_of/2` and `any_of/2`, see [Combining Schemas](schema-composition.md).

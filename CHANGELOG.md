@@ -28,6 +28,9 @@
     header parameters, as the spec requires.
   * `PhoenixSwagger.SchemaTest` validates against `#/components/schemas/<Name>`.
   * Bundle swagger-ui 5.34.1, which reads OpenAPI 3.2.
+  * Add `Schema.one_of/2` and `Schema.any_of/2`. `nullable` on a composed schema
+    wraps its checks in `anyOf` with a null branch.
+  * Add the "Migrating from Swagger 2.0" and "Combining Schemas" guides.
 
 ### Fixes
 
