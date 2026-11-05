@@ -9,6 +9,7 @@ defmodule PhoenixSwagger.Mixfile do
       app: :phoenix_swagger,
       version: @version,
       elixir: "~> 1.16",
+      elixirc_paths: elixirc_paths(Mix.env()),
       build_embedded: Mix.env() == :prod,
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -31,15 +32,19 @@ defmodule PhoenixSwagger.Mixfile do
   end
 
   defp extra_applications(:test) do
-    [:jason, :ex_json_schema]
+    [:jason, :ex_json_schema, :jsv]
   end
 
   defp extra_applications(_), do: []
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   defp deps do
     [
       {:jason, "~> 1.4", optional: true},
       {:ex_json_schema, "~> 0.9", optional: true},
+      {:jsv, "~> 0.27", optional: true},
       {:plug, "~> 1.14"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:benchee, "~> 1.3", only: :dev},
