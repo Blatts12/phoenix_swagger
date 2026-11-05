@@ -250,7 +250,15 @@ defmodule PhoenixSwagger do
   end
 
   @doc false
-  # Converts a Schema struct to regular map, removing nils
+  # Converts structs to plain maps with string keys, dropping nil map values.
+  # Schema structs are rewritten into JSON Schema 2020-12 first. `nil` list
+  # elements stay, so an `enum` can allow `null`.
+  def to_json(%PhoenixSwagger.Schema{} = schema) do
+    schema
+    |> PhoenixSwagger.Schema.to_json_schema_2020_12()
+    |> to_json()
+  end
+
   def to_json(value = %{__struct__: _}) do
     value
     |> Map.from_struct()
@@ -258,13 +266,7 @@ defmodule PhoenixSwagger do
   end
 
   def to_json(value) when is_map(value) do
-    value
-    |> Enum.map(fn {k, v} -> {to_string(k), to_json(v)} end)
-    |> Enum.filter(fn
-      {_, :null} -> false
-      _ -> true
-    end)
-    |> Enum.into(%{})
+    for {k, v} <- value, not is_nil(v), into: %{}, do: {to_string(k), to_json(v)}
   end
 
   def to_json(value) when is_list(value) do
@@ -272,11 +274,7 @@ defmodule PhoenixSwagger do
   end
 
   def to_json(nil) do
-    :null
-  end
-
-  def to_json(:null) do
-    :null
+    nil
   end
 
   def to_json(true) do

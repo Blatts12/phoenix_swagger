@@ -92,7 +92,7 @@ defmodule PhoenixSwagger.JsonApi do
           description:
             "Content with [#{resource}](##{resource |> to_string |> String.downcase()}) objects",
           items: %Schema{
-            "$ref": "#/definitions/#{resource}"
+            "$ref": "#/components/schemas/#{resource}"
           }
         }
       },
@@ -122,7 +122,7 @@ defmodule PhoenixSwagger.JsonApi do
           }
         },
         data: %Schema{
-          "$ref": "#/definitions/#{resource}"
+          "$ref": "#/components/schemas/#{resource}"
         },
         included: %Schema{
           type: :array,

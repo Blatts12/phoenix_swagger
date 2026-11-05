@@ -1,10 +1,11 @@
 defmodule PhoenixSwagger.Schema do
   @moduledoc """
-  Struct and helpers for swagger schema.
+  Struct and helpers for OpenAPI Schema Objects.
 
-  Fields should reflect the swagger SchemaObject specification.
+  Fields follow the OpenAPI 3.2 Schema Object, which is a superset of JSON Schema 2020-12.
+  `PhoenixSwagger.to_json/1` renders the struct in that dialect.
 
-  See http://swagger.io/specification/#schemaObject
+  See https://spec.openapis.org/oas/v3.2.0.html#schema-object
   """
 
   alias PhoenixSwagger.Schema
@@ -39,7 +40,7 @@ defmodule PhoenixSwagger.Schema do
     :additionalProperties,
     :discriminator,
     :example,
-    :"x-nullable"
+    :nullable
   ]
 
   @doc """
@@ -98,20 +99,20 @@ defmodule PhoenixSwagger.Schema do
   end
 
   @doc """
-  Construct a schema reference, using name of definition in this swagger document,
+  Construct a schema reference, using the name of a schema in `components.schemas`,
   or a complete path.
 
   ## Examples
 
       iex> PhoenixSwagger.Schema.ref(:User)
-      %PhoenixSwagger.Schema{"$ref": "#/definitions/User"}
+      %PhoenixSwagger.Schema{"$ref": "#/components/schemas/User"}
 
       iex> PhoenixSwagger.Schema.ref("../common/Error.json")
       %PhoenixSwagger.Schema{"$ref": "../common/Error.json"}
 
   """
   def ref(name) when is_atom(name) do
-    %Schema{"$ref": "#/definitions/#{name}"}
+    %Schema{"$ref": "#/components/schemas/#{name}"}
   end
 
   def ref(path) when is_binary(path) do
@@ -125,7 +126,7 @@ defmodule PhoenixSwagger.Schema do
 
       iex> PhoenixSwagger.Schema.array(:User)
       %PhoenixSwagger.Schema{
-        items: %PhoenixSwagger.Schema{"$ref": "#/definitions/User"},
+        items: %PhoenixSwagger.Schema{"$ref": "#/components/schemas/User"},
         type: :array
       }
 
@@ -168,7 +169,7 @@ defmodule PhoenixSwagger.Schema do
           friends: %PhoenixSwagger.Schema{
             type: :array,
             description: "Friends list",
-            items: %PhoenixSwagger.Schema{"$ref": "#/definitions/User"}
+            items: %PhoenixSwagger.Schema{"$ref": "#/components/schemas/User"}
           },
           address: %PhoenixSwagger.Schema{
             type: [:string, "null"],
@@ -193,12 +194,7 @@ defmodule PhoenixSwagger.Schema do
 
   def property(model = %Schema{type: :object}, name, type = %Schema{}, description, opts) do
     {required?, opts} = Keyword.pop(opts, :required)
-    {nullable?, opts} = Keyword.pop(opts, :nullable)
     property_schema = struct!(type, [description: type.description || description] ++ opts)
-
-    property_schema =
-      if nullable?, do: %{property_schema | :"x-nullable" => true}, else: property_schema
-
     properties = (model.properties || %{}) |> Map.put(name, property_schema)
     model = %{model | properties: properties}
     if required?, do: required(model, name), else: model
@@ -364,25 +360,24 @@ defmodule PhoenixSwagger.Schema do
   end
 
   @doc """
-  Boolean indicating that value for `maximum` is excluded from the valid range.
+  Sets an exclusive upper limit for `:integer` or `:number` types: `x < limit`.
 
-  When true: `x < maximum`, when false: `x <= maximum`
+  A boolean is the Swagger 2.0 form. `true` turns the `maximum` value into the
+  exclusive limit when the schema is rendered.
 
   ## Examples
 
       iex> alias PhoenixSwagger.Schema
       ...> %Schema{type: :number}
-      ...> |> Schema.maximum(128)
-      ...> |> Schema.exclusive_maximum(true)
+      ...> |> Schema.exclusive_maximum(128)
       %PhoenixSwagger.Schema{
         type: :number,
-        maximum: 128,
-        exclusiveMaximum: true
+        exclusiveMaximum: 128
       }
 
   """
-  def exclusive_maximum(model = %Schema{}, exclusive?) when is_boolean(exclusive?) do
-    %{model | exclusiveMaximum: exclusive?}
+  def exclusive_maximum(model = %Schema{}, limit) when is_number(limit) or is_boolean(limit) do
+    %{model | exclusiveMaximum: limit}
   end
 
   @doc """
@@ -401,25 +396,24 @@ defmodule PhoenixSwagger.Schema do
   end
 
   @doc """
-  Boolean indicating that value for `minimum` is excluded from the valid range.
+  Sets an exclusive lower limit for `:integer` or `:number` types: `x > limit`.
 
-  When true: `x > minimum`, when false: `x => minimum`.
+  A boolean is the Swagger 2.0 form. `true` turns the `minimum` value into the
+  exclusive limit when the schema is rendered.
 
   ## Examples
 
       iex> alias PhoenixSwagger.Schema
       ...> %Schema{type: :number}
-      ...> |> Schema.minimum(16)
-      ...> |> Schema.exclusive_minimum(true)
+      ...> |> Schema.exclusive_minimum(16)
       %PhoenixSwagger.Schema{
         type: :number,
-        minimum: 16,
-        exclusiveMinimum: true
+        exclusiveMinimum: 16
       }
 
   """
-  def exclusive_minimum(model = %Schema{}, exclusive?) when is_boolean(exclusive?) do
-    %{model | exclusiveMinimum: exclusive?}
+  def exclusive_minimum(model = %Schema{}, limit) when is_number(limit) or is_boolean(limit) do
+    %{model | exclusiveMinimum: limit}
   end
 
   @doc """
@@ -613,17 +607,17 @@ defmodule PhoenixSwagger.Schema do
 
   Can be used in conjunction with `discriminator` to define polymorphic inheritance relationships.
 
-  See http://swagger.io/specification/#composition-and-inheritance--polymorphism--83
+  See https://spec.openapis.org/oas/v3.2.0.html#composition-and-inheritance-polymorphism
 
   ## Examples
 
       iex> alias PhoenixSwagger.Schema
       ...> %Schema{}
-      ...> |> Schema.all_of([Schema.ref("#definitions/Contact"), Schema.ref("#definitions/CreditHistory")])
+      ...> |> Schema.all_of([Schema.ref(:Contact), Schema.ref(:CreditHistory)])
       %PhoenixSwagger.Schema{
         allOf: [
-          %PhoenixSwagger.Schema{"$ref": "#definitions/Contact"},
-          %PhoenixSwagger.Schema{"$ref": "#definitions/CreditHistory"},
+          %PhoenixSwagger.Schema{"$ref": "#/components/schemas/Contact"},
+          %PhoenixSwagger.Schema{"$ref": "#/components/schemas/CreditHistory"},
         ]
       }
 
@@ -749,9 +743,9 @@ defmodule PhoenixSwagger.Schema do
   Specifies the name of a property that identifies the polymorphic schema for a JSON object.
 
   The value of this property should be the name of this schema, or another schema that inherits
-  from this schema using `all_of`.
+  from this schema using `all_of`. It renders as a Discriminator Object with `propertyName` set.
 
-  See http://swagger.io/specification/#composition-and-inheritance--polymorphism--83
+  See https://spec.openapis.org/oas/v3.2.0.html#discriminator-object
 
 
   ## Examples
@@ -784,7 +778,11 @@ defmodule PhoenixSwagger.Schema do
   end
 
   @doc """
-  Sets the `x-nullable` vendor extension property for the schema.
+  Allows `null` as a value of the schema.
+
+  JSON Schema 2020-12 has no `nullable` keyword. When rendered, a typed schema gets
+  `"null"` added to its `type` (and `nil` to its `enum`), and a `$ref` is wrapped
+  in `anyOf` with `{"type": "null"}`.
 
   ## Examples
 
@@ -792,13 +790,69 @@ defmodule PhoenixSwagger.Schema do
       ...> %Schema{type: :string} |> Schema.nullable(true)
       %Schema{
         type: :string,
-        "x-nullable": true
+        nullable: true
       }
 
   """
   @spec nullable(%Schema{}, maybe_boolean) :: %Schema{}
         when maybe_boolean: true | false | nil
   def nullable(model = %Schema{}, value) when value in [true, false, nil] do
-    %{model | "x-nullable": value}
+    %{model | nullable: value}
   end
+
+  @doc false
+  # Rewrites one level of the struct into JSON Schema 2020-12 keywords.
+  # `PhoenixSwagger.to_json/1` recurses into nested schemas.
+  def to_json_schema_2020_12(%Schema{} = schema) do
+    schema
+    |> Map.from_struct()
+    |> apply_nullable()
+    |> move_exclusive_bound(:exclusiveMaximum, :maximum)
+    |> move_exclusive_bound(:exclusiveMinimum, :minimum)
+    |> move_tuple_items_to_prefix_items()
+    |> wrap_discriminator_property_name()
+  end
+
+  defp apply_nullable(%{nullable: true, type: type} = schema) when not is_nil(type) do
+    %{schema | nullable: nil, type: add_null_type(type), enum: add_null_enum_value(schema.enum)}
+  end
+
+  defp apply_nullable(%{nullable: true, "$ref": ref} = schema) when is_binary(ref) do
+    schema
+    |> Map.merge(%{nullable: nil, "$ref": nil})
+    |> Map.put(:anyOf, [%Schema{"$ref": ref}, %Schema{type: :null}])
+  end
+
+  defp apply_nullable(schema), do: %{schema | nullable: nil}
+
+  defp add_null_type(types) when is_list(types) do
+    if Enum.any?(types, &(&1 in [:null, "null"])), do: types, else: types ++ [:null]
+  end
+
+  defp add_null_type(type) when type in [:null, "null"], do: type
+  defp add_null_type(type), do: [type, :null]
+
+  defp add_null_enum_value(nil), do: nil
+  defp add_null_enum_value(values), do: if(nil in values, do: values, else: values ++ [nil])
+
+  defp move_exclusive_bound(schema, exclusive_key, bound_key) do
+    case Map.fetch!(schema, exclusive_key) do
+      true -> %{schema | exclusive_key => Map.fetch!(schema, bound_key), bound_key => nil}
+      false -> %{schema | exclusive_key => nil}
+      _limit_or_nil -> schema
+    end
+  end
+
+  defp move_tuple_items_to_prefix_items(%{items: items} = schema) when is_list(items) do
+    schema |> Map.put(:items, nil) |> Map.put(:prefixItems, items)
+  end
+
+  defp move_tuple_items_to_prefix_items(schema), do: schema
+
+  defp wrap_discriminator_property_name(%{discriminator: name} = schema)
+       when is_binary(name) or (is_atom(name) and not is_nil(name)) do
+    %{schema | discriminator: %{propertyName: name}}
+  end
+
+  defp wrap_discriminator_property_name(schema), do: schema
 end

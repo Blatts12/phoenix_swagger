@@ -38,7 +38,7 @@ defmodule PhoenixSwagger.JsonApiTest do
              "properties" => %{
                "data" => %{
                  "description" => "Content with [UserResource](#userresource) objects",
-                 "items" => %{"$ref" => "#/definitions/UserResource"},
+                 "items" => %{"$ref" => "#/components/schemas/UserResource"},
                  "type" => "array"
                },
                "links" => %{
@@ -93,7 +93,7 @@ defmodule PhoenixSwagger.JsonApiTest do
                "A JSON-API document with a single [UserResource](#userresource) resource",
              "properties" => %{
                "data" => %{
-                 "$ref" => "#/definitions/UserResource"
+                 "$ref" => "#/components/schemas/UserResource"
                },
                "links" => %{
                  "properties" => %{
@@ -140,7 +140,7 @@ defmodule PhoenixSwagger.JsonApiTest do
                  "type" => "object",
                  "properties" => %{
                    "address" => %{
-                     "$ref" => "#/definitions/Address",
+                     "$ref" => "#/components/schemas/Address",
                      "description" => "Users address"
                    },
                    "birthday" => %{
